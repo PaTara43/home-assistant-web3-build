@@ -1,6 +1,11 @@
 # home-assistant-web3-build
 
-This repository contains docker compose file with Home Assistant + ipfs daemon + libp2p proxy + zigbee2mqtt.
+This repository contains all nessesary packages to start Assistant + ipfs daemon + libp2p proxy + zigbee2mqtt + mosquitto on RISCV64 architecture.
+
+
+
+
+
 
 ## Requirements 
 
