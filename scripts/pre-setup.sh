@@ -12,7 +12,7 @@ sudo apt-get install wget unzip git jq -y
 
 # create password for mqtt. Then save it in mosquitto home directory and provide this data to z2m configuration
 MOSQUITTO_PASSWORD=$(openssl rand -hex 10)
-echo "$MOSQUITTO_PASSWORD" > $SCRIPT_DIR/raw_passwd_mqtt.txt
+echo "MOSQUITTO_PASSWORD=$MOSQUITTO_PASSWORD" > $SCRIPT_DIR/raw_passwd_mqtt.txt
 
 sudo apt install mosquitto mosquitto-clients -y
 sudo mosquitto_passwd -b -c /etc/mosquitto/passwd mosquitto $MOSQUITTO_PASSWORD
@@ -33,6 +33,15 @@ export PATH="/usr/local/go/bin:$PATH"
 echo "export PATH=/usr/local/go/bin:$PATH" >> ~/.bashrc
 
 #install ipfs
+# check if /usr/local/bin exists
+if [ -d "/usr/local/bin" ]; then
+    echo "Directory /usr/local/bin already exists."
+else
+    echo "Directory /usr/local/bin does not exist. Creating..."
+    sudo mkdir -p /usr/local/bin
+    echo "Directory /usr/local/bin has been created."
+fi
+
 sudo cp $SCRIPT_DIR/../pkg/ipfs_riscv64 /usr/local/bin/ipfs
 
 ipfs init -p local-discovery
@@ -70,16 +79,18 @@ sudo systemctl start ipfs.service
 
 # install libp2p proxy
 sudo apt-get install npm -y
-git clone https://github.com/PinoutLTD/libp2p-ws-proxy.git -C $SCRIPT_DIR/
-cd $SCRIPT_DIR/libp2p-ws-proxy
+git clone https://github.com/PinoutLTD/libp2p-ws-proxy.git $SCRIPT_DIR/../libp2p-ws-proxy
+cd $SCRIPT_DIR/../libp2p-ws-proxy
 npm install
+
+LIBP2P_DIR=$(readlink -f "$SCRIPT_DIR/../libp2p-ws-proxy")
 
 echo "[Unit]
 Description= Libp2p Proxy Service
 
 [Service]
 Type=simple
-WorkingDirectory=$SCRIPT_DIR/libp2p-ws-proxy/
+WorkingDirectory=$LIBP2P_DIR
 ExecStart=/usr/bin/node src/index.js
 User=$USER
 Restart=always
@@ -87,6 +98,7 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
+
   " | sudo tee /etc/systemd/system/libp2p-proxy.service
 
 sudo systemctl enable libp2p-proxy.service

@@ -1,15 +1,22 @@
 #!/bin/bash
 
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get mqtt password
+source $SCRIPT_DIR/raw_passwd_mqtt.txt
+
 echo "this script will create all necessary repositories and start docker containers"
 
+# set to false if you don't want to start Zigbee2MQTT container
 Z2MENABLE=true
 
-# First we need to check that user insert the zigbee stick
+# Check if Zigbee dongle is connected
 if [ -d /dev/serial/by-id/ ]; then
-  # the directory exists
+  # If device exists
   if [ "$(ls -A /dev/serial/by-id/)" ]; then
-    echo "the zigbee coordinator is installed"
-    # count how many devices connected
+    echo "the Zigbee coordinator is installed"
+    # Count how many devices are connected
     NUMB=$(ls -1q /dev/serial/by-id/ | wc -l)
 
     if (($NUMB > 1)); then
@@ -26,12 +33,12 @@ if [ -d /dev/serial/by-id/ ]; then
     fi
 
   else
-    echo "Cannot find zigbee coordinator location. Please insert it and run script again."
-    echo "Do you want to continue without zigbee coordinator? It will not start Zigbee2MQTT container."
+    echo "Cannot find Zigbee coordinator location. Please insert it and run script again."
+    echo "Do you want to continue without Zigbee coordinator? It will not start Zigbee2MQTT container."
     while true; do
         read -p "Do you want to proceed? (Y/n) " yn
         case $yn in
-	          [yY]| "" ) echo ok, we will proceed;
+	          [yY]| "" ) echo Ok, proceeding without Zigbee coordinator;
 	            Z2MENABLE=false
 		          break;;
 	          [nN] ) echo exiting...;
@@ -60,24 +67,8 @@ fi
 export Z2MPATH
 echo "Z2M path is - $Z2MPATH"
 
-echo "Checking docker installation"
-if command -v docker &> /dev/null; then
-    echo "Docker installation found"
-else
-    echo "Docker installation not found. Please install docker."
-    exit 1
-fi
-
-# check if user in docker group
-if id -nG "$USER" | grep -qw "docker"; then
-    echo "$USER belongs to docker group"
-else
-    echo "$USER does not belong to docker. Please add $USER to group."
-    exit 1
-fi
-
 # check .env file
-if [[ -f .env ]]
+if [[ -f $source $SCRIPT_DIR/../.env ]]
 then
   echo ". env file exists"
 else
@@ -85,22 +76,24 @@ else
   exit 1
 fi
 
-# grap variables from .env file excluding comments
-export $(grep -v '^#' .env | xargs)
+source $SCRIPT_DIR/../.env
 
 # Check the last symbol in path. if it is "/", then delete it.
 LAST_SYMBOL=${CONFIG_PATH: -1}
-echo "$LAST_SYMBOL"
 if [ "$LAST_SYMBOL" = "/" ]; then
   CONFIG_PATH="${CONFIG_PATH%?}"
 fi
 
 # grap version of packages
-export $(grep -v '^#' scripts/packages.env | xargs)
+source $SCRIPT_DIR/../src/packages.env
 
 # save current path to return later
 CURRENT_PATH=$(pwd)
 
+if [[ $CONFIG_PATH=="./configs" ]]
+then
+  mkdir $SCRIPT_DIR/../configs
+fi
 
 if [[ -d $CONFIG_PATH ]]
 then
@@ -111,64 +104,41 @@ else
   exit 1
 fi
 
-# create IPFS repositories
-if [[ -d ./ipfs/data ]]
-then
-  echo "IPFS directory already exist"
-else
-  mkdir -p "ipfs/data"
-  mkdir -p "ipfs/staging"
-fi
+#zigbee2mqtt
+mkdir -p "zigbee2mqtt/data"
 
-# mqtt broker
-if [[ -d ./mosquitto ]]
-then
-  echo "mosquitto directory already exist"
-  MOSQUITTO_PASSWORD=`cat ./mosquitto/raw.txt`
-  export MOSQUITTO_PASSWORD
-else
-  mkdir -p "mosquitto/config"
-  mkdir -p "zigbee2mqtt/data"
+echo "# Home Assistant integration (MQTT discovery)
+homeassistant: true
 
-  # create password for mqtt. Then save it in mosquitto home directory and provide this data to z2m configuration
-  MOSQUITTO_PASSWORD=$(openssl rand -hex 10)
-  echo "$MOSQUITTO_PASSWORD" > ./mosquitto/raw.txt
+# allow new devices to join
+permit_join: false
 
-  export MOSQUITTO_PASSWORD
+# MQTT settings
+mqtt:
+  # MQTT base topic for zigbee2mqtt MQTT messages
+  base_topic: zigbee2mqtt
+  # MQTT server URL
+  server: 'mqtt://localhost'
+  # MQTT server authentication, uncomment if required:
+  user: connectivity
+  password: $MOSQUITTO_PASSWORD
 
-  cp $CURRENT_PATH/scripts/mosquitto.conf  ./mosquitto/config/mosquitto.conf
+advanced:
+  channel: $ZIGBEE_CHANNEL
 
-  #zigbee2mqtt
-  echo "# Home Assistant integration (MQTT discovery)
-  homeassistant: true
+frontend:
+  # Optional, default 8080
+  port: 8099
 
-  # allow new devices to join
-  permit_join: false
+# Serial settings
+serial:
+  # Location of CC2531 USB sniffer
+  port: /dev/ttyACM0
 
-  # MQTT settings
-  mqtt:
-    # MQTT base topic for zigbee2mqtt MQTT messages
-    base_topic: zigbee2mqtt
-    # MQTT server URL
-    server: 'mqtt://localhost'
-    # MQTT server authentication, uncomment if required:
-    user: connectivity
-    password: $MOSQUITTO_PASSWORD
+" | tee ./zigbee2mqtt/data/configuration.yaml
 
-  advanced:
-    channel: $ZIGBEE_CHANNEL
 
-  frontend:
-    # Optional, default 8080
-    port: 8099
-
-  # Serial settings
-  serial:
-    # Location of CC2531 USB sniffer
-    port: /dev/ttyACM0
-
-  " | tee ./zigbee2mqtt/data/configuration.yaml
-fi
+# home assistant config setup
 
 if [[ -d ./homeassistant/.storage ]]
 then
@@ -228,15 +198,8 @@ fi
 # return to the directory with compose
 cd $CURRENT_PATH
 
-
-if [ "$Z2MENABLE" = "true" ]; then
-    echo "start docker with zigbee2mqtt"
-    docker compose --profile z2m up -d
-else
-    echo "start docker without zigbee2mqtt"
-    docker compose up -d
-fi
-
 # at the end save Z2Mpath to env file for use in the update script
-echo "" >> .env
-echo "Z2MPATH=$Z2MPATH" >> .env
+echo "" >> $SCRIPT_DIR/../.env
+echo "Z2MENABLE=$Z2MENABLE" >> $SCRIPT_DIR/../.env
+echo "" >> $SCRIPT_DIR/../.env
+echo "Z2MPATH=$Z2MPATH" >> $SCRIPT_DIR/../.env

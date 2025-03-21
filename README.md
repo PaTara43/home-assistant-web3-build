@@ -13,7 +13,7 @@ sudo apt-get update && sudo apt-get upgrade
 
 ## Installation
 
-ВАЖНО - все скрипты должны хапускаться под одним пользователем.
+ВАЖНО - все скрипты должны хапускаться под одним пользователем.  также они будут требоавть права суперюхера
 
 сначала ставим докер. для этого достаточно запустить скрипт docker-setup.sh
 ```commandline
@@ -27,5 +27,20 @@ bash scripts/docker-setup.sh
 bash scripts/pre-setup.sh
 ```
 
+Теперь давайте создадим все необходимы конфиг файлы. Для этого скопирйте все из шаблона конфига к свой конфиг:
+```commandline
+cp template.env .env
+```
+After that,You may open the file and edit default values such as:
 
+- path to repository where will be stored all configurations folders.
+- time zone in "tz database name".
+- зигби канал
+
+и запукаем скрипт. Данный скрипт создст все необходимые конфигурационные директории и подтянет переменные окружения
+
+```commandline
+bash scripts/setup.sh
+```
 ## Run
+Теперь все готово чтобы запустить доер контейнеры с home assistant и zigbee2mqtt. Достаточно вызвать скрипт start.sh

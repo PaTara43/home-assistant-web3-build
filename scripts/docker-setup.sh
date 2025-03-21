@@ -4,7 +4,7 @@ set -euo pipefail
 #isntall Docker.io
 
 sudo apt-get update
-sudo apt-get install docker.io wget unzip git jq -y
+sudo apt-get install docker.io -y
 
 GROUP="docker"
 USER_TO_ADD="$USER"
