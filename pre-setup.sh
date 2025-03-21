@@ -70,7 +70,7 @@ sudo systemctl enable ipfs.service
 sudo systemctl start ipfs.service
 
 # install libp2p proxy
-sudo apt install npm
+sudo apt-get install npm -y
 git clone https://github.com/PinoutLTD/libp2p-ws-proxy.git
 cd libp2p-ws-proxy
 npm install
