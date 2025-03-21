@@ -1,19 +1,18 @@
 #!/bin/bash
 
-#isntall Docker.io
+set -euo pipefail
 
-sudo apt-get install docker.io wget unzip git jq -y
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-sudo groupadd docker
-sudo usermod -aG docker $USER
-newgrp docker
 
+sudo apt-get update
+sudo apt-get install wget unzip git jq -y
 
 #install mosquitto
 
 # create password for mqtt. Then save it in mosquitto home directory and provide this data to z2m configuration
 MOSQUITTO_PASSWORD=$(openssl rand -hex 10)
-echo "$MOSQUITTO_PASSWORD" > .raw_passwd_mqtt.txt
+echo "$MOSQUITTO_PASSWORD" > $SCRIPT_DIR/raw_passwd_mqtt.txt
 
 sudo apt install mosquitto mosquitto-clients -y
 sudo mosquitto_passwd -b -c /etc/mosquitto/passwd mosquitto $MOSQUITTO_PASSWORD
@@ -27,14 +26,14 @@ sudo systemctl restart mosquitto
 
 # install go
 
-tar -vxf pkg/go1.24.0.linux-riscv64.tar.gz -C /usr/local
+sudo tar -vxf $SCRIPT_DIR/../pkg/go1.24.0.linux-riscv64.tar.gz -C /usr/local
 # Add to your PATH
 export PATH="/usr/local/go/bin:$PATH"
 # Add to bashrc
 echo "export PATH=/usr/local/go/bin:$PATH" >> ~/.bashrc
 
 #install ipfs
-sudo cp pkg/ipfs_riscv64 /usr/local/bin/ipfs
+sudo cp $SCRIPT_DIR/../pkg/ipfs_riscv64 /usr/local/bin/ipfs
 
 ipfs init -p local-discovery
 ipfs bootstrap add /dns4/1.pubsub.aira.life/tcp/443/wss/ipfs/QmdfQmbmXt6sqjZyowxPUsmvBsgSGQjm4VXrV7WGy62dv8
@@ -71,8 +70,8 @@ sudo systemctl start ipfs.service
 
 # install libp2p proxy
 sudo apt-get install npm -y
-git clone https://github.com/PinoutLTD/libp2p-ws-proxy.git
-cd libp2p-ws-proxy
+git clone https://github.com/PinoutLTD/libp2p-ws-proxy.git -C $SCRIPT_DIR/
+cd $SCRIPT_DIR/libp2p-ws-proxy
 npm install
 
 echo "[Unit]
@@ -80,7 +79,7 @@ Description= Libp2p Proxy Service
 
 [Service]
 Type=simple
-WorkingDirectory=$HOME/home-assistant-web3-build/libp2p-ws-proxy/
+WorkingDirectory=$SCRIPT_DIR/libp2p-ws-proxy/
 ExecStart=/usr/bin/node src/index.js
 User=$USER
 Restart=always

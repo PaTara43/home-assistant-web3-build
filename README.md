@@ -6,19 +6,26 @@ This repository contains all nessesary packages to start Assistant + ipfs daemon
 ## Requirements 
 
 ожидается что у вас установлена убунта по этой инструкции и вы успешно на нее зашли - https://canonical-ubuntu-boards.readthedocs-hosted.com/en/latest/how-to/starfive-visionfive/
+также рекомендуется обновить все зависимости:
+```commandline
+sudo apt-get update && sudo apt-get upgrade
+```
 
 ## Installation
 
-Run bash script:
+ВАЖНО - все скрипты должны хапускаться под одним пользователем.
 
-сначала надо поставить пакеты котроые пока не обернуты в докер. Также постпавить и сам докер.
+сначала ставим докер. для этого достаточно запустить скрипт docker-setup.sh
+```commandline
+bash scripts/docker-setup.sh
+```
+
+Далее надо поставить пакеты котроые пока не обернуты в докер.
 Для этого достаточно запустить скрипт `pre-setup.sh`
 
-
-After everything started, Home Assistant web interface will be on 8123 port and zigbee2mqtt on 8099 port.
-
-
-It will stop and delete running docker containers.
+```commandline
+bash scripts/pre-setup.sh
+```
 
 
 ## Run
