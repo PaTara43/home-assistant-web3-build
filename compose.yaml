@@ -17,7 +17,7 @@ services:
     image: nakata5321/riscv-homeassistant:${HA_VERSION}
     restart: unless-stopped
     volumes:
-      - ${CONFIG_PATH}/homeassistant:/config
+      - ${CONFIG_PATH}/homeassistant:/srv/homeassistant/config
       - /etc/localtime:/etc/localtime:ro
       - /run/dbus:/run/dbus:ro
     privileged: true
