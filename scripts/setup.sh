@@ -68,7 +68,7 @@ export Z2MPATH
 echo "Z2M path is - $Z2MPATH"
 
 # check .env file
-if [[ -f $source $SCRIPT_DIR/../.env ]]
+if [[ -f $SCRIPT_DIR/../.env ]]
 then
   echo ". env file exists"
 else
