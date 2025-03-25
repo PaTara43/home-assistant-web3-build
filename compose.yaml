@@ -8,20 +8,16 @@ services:
       - ${CONFIG_PATH}/zigbee2mqtt/data:/app/data
       - /run/udev:/run/udev:ro
     network_mode: host
-    environment:
-      - TZ=${TZ}
     devices:
       # Make sure this matched your adapter location
       - ${Z2MPATH}:/dev/ttyACM0
 
   homeassistant:
     container_name: homeassistant
-    image: ghcr.io/home-assistant/home-assistant:${HA_VERSION}
+    image: nakata5321/riscv-homeassistant:${HA_VERSION}
     restart: unless-stopped
     volumes:
       - ${CONFIG_PATH}/homeassistant:/config
-      - ${CONFIG_PATH}/mosquitto:/etc/mosquitto
-      - ${CONFIG_PATH}/zigbee2mqtt:/opt/zigbee2mqtt
       - /etc/localtime:/etc/localtime:ro
       - /run/dbus:/run/dbus:ro
     privileged: true
