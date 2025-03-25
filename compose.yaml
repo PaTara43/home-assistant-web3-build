@@ -7,7 +7,9 @@ services:
     volumes:
       - ${CONFIG_PATH}/zigbee2mqtt/data:/app/data
       - /run/udev:/run/udev:ro
-    network_mode: host
+    ports:
+      # Frontend port
+      - 8099:8080
     devices:
       # Make sure this matched your adapter location
       - ${Z2MPATH}:/dev/ttyACM0

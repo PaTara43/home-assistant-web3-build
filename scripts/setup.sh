@@ -127,8 +127,7 @@ advanced:
   channel: $ZIGBEE_CHANNEL
 
 frontend:
-  # Optional, default 8080
-  port: 8099
+    enabled: true
 
 # Serial settings
 serial:
