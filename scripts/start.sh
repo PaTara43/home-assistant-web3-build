@@ -8,6 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source $SCRIPT_DIR/../.env
 source $SCRIPT_DIR/../src/packages.env
 
+export Z2M_VERSION
+export HA_VERSION
+
 cd $SCRIPT_DIR/../
 
 if [ "$Z2MENABLE" = "true" ]; then
