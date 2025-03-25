@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Get environment variables
 source $SCRIPT_DIR/../.env
+source $SCRIPT_DIR/../src/packages.env
 
 cd $SCRIPT_DIR/../
 

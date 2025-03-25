@@ -23,7 +23,7 @@ sudo apt-get update && sudo apt-get upgrade
 ⚠️ **IMPORTANT:** All scripts must be executed under the same user. Some of them will require superuser (sudo) privileges.
 
 1. **Install Docker**  
-   Run the Docker installation script:
+   Run the Docker  and Docker compose installation script:
    ```bash
    bash scripts/docker-setup.sh
    ```

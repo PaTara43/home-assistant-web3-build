@@ -1,11 +1,20 @@
 #!/bin/bash
 
 set -euo pipefail
-#isntall Docker.io
+# isntall Docker.io
 
 sudo apt-get update
-sudo apt-get install docker.io -y
+sudo apt-get install curl docker.io -y
 
+# install Docker compose
+
+DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+mkdir -p $DOCKER_CONFIG/cli-plugins
+curl -SL https://github.com/docker/compose/releases/download/v2.34.0/docker-compose-linux-riscv64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+docker compose version
+
+# add user to docker group
 GROUP="docker"
 USER_TO_ADD="$USER"
 
