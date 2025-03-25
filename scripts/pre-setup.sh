@@ -15,7 +15,7 @@ MOSQUITTO_PASSWORD=$(openssl rand -hex 10)
 echo "MOSQUITTO_PASSWORD=$MOSQUITTO_PASSWORD" > $SCRIPT_DIR/raw_passwd_mqtt.txt
 
 sudo apt install mosquitto mosquitto-clients -y
-sudo mosquitto_passwd -b -c /etc/mosquitto/passwd mosquitto $MOSQUITTO_PASSWORD
+sudo mosquitto_passwd -b -c /etc/mosquitto/passwd connectivity $MOSQUITTO_PASSWORD
 
 echo "listener 1883
 allow_anonymous false
