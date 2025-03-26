@@ -1,5 +1,6 @@
-this is pre-built packages for RISCV64 architecture. It included **GOLang**, **ipfs** and **go2rtc** packages.
+This is pre-built packages for RISCV64 architecture. It included **GOLang**, **ipfs** and **go2rtc** packages.
 
+Also, here is dockerfile from which the image is built. 
 ## Versions 
 ```commandline
 $ go version

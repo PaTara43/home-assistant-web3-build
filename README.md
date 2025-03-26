@@ -8,7 +8,7 @@ This repository contains all the necessary packages to run **Home Assistant**, *
 ## Requirements
 
 It is expected that you have Ubuntu installed and running according to this guide:  
-👉 [StarFive VisionFive - Ubuntu Installation Guide](https://canonical-ubuntu-boards.readthedocs-hosted.com/en/latest/how-to/starfive-visionfive/)
+👉 [StarFive VisionFive - Ubuntu Installation Guide](https://canonical-ubuntu-boards.readthedocs-hosted.com/en/latest/how-to/starfive-visionfive-2/)
 
 It is also recommended to update all dependencies:
 
