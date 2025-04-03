@@ -90,9 +90,10 @@ source $SCRIPT_DIR/../src/packages.env
 # save current path to return later
 CURRENT_PATH=$(pwd)
 
-if [[ $CONFIG_PATH=="./configs" ]]
-then
-  mkdir $SCRIPT_DIR/../configs
+if [[ $CONFIG_PATH == "./configs" ]]; then
+  if [[ ! -d $SCRIPT_DIR/../configs ]]; then
+    mkdir -p $SCRIPT_DIR/../configs
+  fi
 fi
 
 if [[ -d $CONFIG_PATH ]]

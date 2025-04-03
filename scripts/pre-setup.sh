@@ -32,8 +32,8 @@ export PATH="/usr/local/go/bin:$PATH"
 # Add to bashrc
 echo "export PATH=/usr/local/go/bin:$PATH" >> ~/.bashrc
 
-#install ipfs
-# check if /usr/local/bin exists
+# Install IPFS
+# Check if /usr/local/bin exists
 if [ -d "/usr/local/bin" ]; then
     echo "Directory /usr/local/bin already exists."
 else
@@ -42,7 +42,14 @@ else
     echo "Directory /usr/local/bin has been created."
 fi
 
-sudo cp $SCRIPT_DIR/../pkg/ipfs_riscv64 /usr/local/bin/ipfs
+# Check if ipfs file exists
+if [ -f "/usr/local/bin/ipfs" ]; then
+    echo "IPFS already exists. Skipping installation."
+else
+    echo "IPFS not found. Installing..."
+    sudo cp $SCRIPT_DIR/../pkg/ipfs_riscv64 /usr/local/bin/ipfs
+    echo "IPFS has been installed."
+fi
 
 ipfs init -p local-discovery
 ipfs bootstrap add /dns4/1.pubsub.aira.life/tcp/443/wss/ipfs/QmdfQmbmXt6sqjZyowxPUsmvBsgSGQjm4VXrV7WGy62dv8
@@ -87,6 +94,7 @@ LIBP2P_DIR=$(readlink -f "$SCRIPT_DIR/../libp2p-ws-proxy")
 
 echo "[Unit]
 Description= Libp2p Proxy Service
+After=network.target
 
 [Service]
 Type=simple

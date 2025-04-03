@@ -46,8 +46,8 @@ tzdata \
 zlib1g-dev \
 && rm -rf /var/lib/apt/lists/*
 
-#TODO work under root user
 RUN useradd -rm homeassistant -d /srv/homeassistant -G dialout,tty
+
 
 WORKDIR /srv/homeassistant
 
@@ -78,6 +78,13 @@ RUN python3 -m pip install zlib_ng isal libpcap pyatv==0.16.0
 RUN git clone https://github.com/PaTara43/py-bindings-wheels-risc-v && \
 cd py-bindings-wheels-risc-v && \
 pip3 install *
+
+RUN git clone --depth 1 --branch 2025.1.3 https://github.com/home-assistant/core
+
+WORKDIR /srv/homeassistant/core
+
+RUN python3 -m pip install -r requirements.txt
+RUN python3 -m pip install -r requirements_all.txt
 
 RUN python3 -m pip install homeassistant==2025.1.3
 RUN python3 -m pip install robonomics-interface~=1.6
