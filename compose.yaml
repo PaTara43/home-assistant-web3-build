@@ -1,21 +1,4 @@
 services:
-  mosquitto:
-    container_name: mosquitto
-    build:
-      context: ./scripts
-      dockerfile: mosquitto.Dockerfile
-      args:
-        MOSQUITTO_VERSION: ${MOSQUITTO_VERSION}
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-      - "9001:9001"
-    volumes:
-      - ${CONFIG_PATH}/mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ${CONFIG_PATH}/mosquitto:/mosquitto
-    environment:
-      - MOSQUITTO_PASSWORD=${MOSQUITTO_PASSWORD}
-
   zigbee2mqtt:
     container_name: zigbee2mqtt
     image: koenkk/zigbee2mqtt:${Z2M_VERSION}
@@ -25,50 +8,16 @@ services:
       - ${CONFIG_PATH}/zigbee2mqtt/data:/app/data
       - /run/udev:/run/udev:ro
     network_mode: host
-    environment:
-      - TZ=${TZ}
     devices:
       # Make sure this matched your adapter location
       - ${Z2MPATH}:/dev/ttyACM0
 
-  ipfs:
-    container_name: ipfs-daemon
-    image: ipfs/kubo:v${IPFS_VERSION}
-    deploy:
-      resources:
-        limits:
-          memory: 800M
-    restart: unless-stopped
-    volumes:
-      - ${CONFIG_PATH}/ipfs/data:/data/ipfs
-      - ${CONFIG_PATH}/ipfs/staging:/export
-      - ./scripts/001-test.sh:/container-init.d/001-test.sh
-    environment:
-      - IPFS_PATH=/data/ipfs
-    ports:
-      - 4001:4001/tcp
-      - 4001:4001/udp
-      - 127.0.0.1:5001:5001
-      - 8080:8080
-    command: ["daemon", "--enable-gc", "--migrate=true", "--agent-version-suffix=docker"]
-
-  libp2p:
-    container_name: libp2p-proxy
-    restart: unless-stopped
-    image: ghcr.io/pinoutltd/libp2p-ws-proxy:v.${LIBP2P_VERSION}
-    ports:
-      - 127.0.0.1:8888:8888
-      - 127.0.0.1:9999:9999
-
-
   homeassistant:
     container_name: homeassistant
-    image: ghcr.io/home-assistant/home-assistant:${HA_VERSION}
+    image: nakata5321/riscv-homeassistant:${HA_VERSION}
     restart: unless-stopped
     volumes:
-      - ${CONFIG_PATH}/homeassistant:/config
-      - ${CONFIG_PATH}/mosquitto:/etc/mosquitto
-      - ${CONFIG_PATH}/zigbee2mqtt:/opt/zigbee2mqtt
+      - ${CONFIG_PATH}/homeassistant:/srv/homeassistant/config
       - /etc/localtime:/etc/localtime:ro
       - /run/dbus:/run/dbus:ro
     privileged: true

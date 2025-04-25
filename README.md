@@ -1,66 +1,68 @@
+
 # home-assistant-web3-build
 
-This repository contains docker compose file with Home Assistant + ipfs daemon + libp2p proxy + zigbee2mqtt.
+This repository contains all the necessary packages to run **Home Assistant**, **IPFS daemon**, **libp2p proxy**, **Zigbee2MQTT**, and **Mosquitto** on the **RISCV64** architecture.
 
-## Requirements 
+---
 
-Fisrt of all you need to install Docker. Find installation instructions on official website:
-- [Docker Docs](https://docs.docker.com/engine/install/ubuntu/)
+## Requirements
 
-Alternatively, good instructions could be found here:
-- [Digital Ocean](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-compose-on-ubuntu-22-04)
+It is expected that you have Ubuntu installed and running according to this guide:  
+👉 [StarFive VisionFive - Ubuntu Installation Guide](https://canonical-ubuntu-boards.readthedocs-hosted.com/en/latest/how-to/starfive-visionfive-2/)
 
+It is also recommended to update all dependencies:
 
-
-
-**Docker should start without root preventives.** This is important to provide correct access to directories.
-
-then, install additional packages:
-```commandline
-sudo apt-get install wget unzip git jq
+```bash
+sudo apt-get update && sudo apt-get upgrade
 ```
 
-**Insert zigbee coordinator in your PC before start script!** 
+---
 
-## Configuration
+## Installation
 
-First, download the repository and go to it:
-```commandline
-git clone https://github.com/airalab/home-assistant-web3-build
-cd home-assistant-web3-build/
+⚠️ **IMPORTANT:** All scripts must be executed under the same user. Some of them will require superuser (sudo) privileges.
+
+1. **Install Docker**  
+   Run the Docker  and Docker compose installation script:
+   ```bash
+   bash scripts/docker-setup.sh
+   ```
+
+2. **Install additional required packages (Non-Docker)**  
+   Run the pre-setup script to install packages that are not containerized yet:
+   ```bash
+   bash scripts/pre-setup.sh
+   ```
+
+3. **Create and configure the environment file**  
+   - Copy the environment template to create your `.env` file:
+     ```bash
+     cp template.env .env
+     ```
+   - Open the `.env` file and edit the following values:
+     - `CONFIG_PATH`: Path to the repository where all configuration folders will be stored
+     - `ZIGBEE_CHANNEL`: Zigbee channel number
+   - Example:
+     ```
+     CONFIG_PATH=/home/user/home-assistant-web3-build
+     ZIGBEE_CHANNEL=15
+     ```
+
+4. **Setup configuration**  
+   Run the setup script to create all necessary configuration directories and load environment variables:
+   ```bash
+   bash scripts/setup.sh
+   ```
+
+---
+
+## Run
+
+Everything is ready! To start the Docker containers with **Home Assistant** and **Zigbee2MQTT**, simply run:
+
+```bash
+bash scripts/start.sh
 ```
 
-then you have to create `.env` file. Convert it from `template.env` file:
-```commandline
-cp template.env .env
-```
-After that,You may open the file and edit default values such as: 
-- Versions of packages
-- path to repository where will be stored all configurations folders.
-- time zone in ["tz database name"](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
 
-
-
-## Installation and Run
-
-Run bash script:
-```commandline
-bash setup.sh
-```
-
-After everything started, Home Assistant web interface will be on 8123 port and zigbee2mqtt on 8099 port.
-
-
-It will stop and delete running docker containers.
-
-## Update 
-
-To update version of packages, run `update.sh` script. It will stop running containers, dowload new version of packages and start everything again. This script will save all configurations files.
-
-
-## Stop
-
-To stop everything run stop script:
-```commandline
-bash stop.sh
-```
+✅ **Setup complete! You're ready to run your self-hosted Home Assistant environment with Zigbee, IPFS, and Web3 capabilities.**

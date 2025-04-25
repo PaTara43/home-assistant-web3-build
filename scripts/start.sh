@@ -1,0 +1,22 @@
+#!/bin/bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Get environment variables
+source $SCRIPT_DIR/../.env
+source $SCRIPT_DIR/../src/packages.env
+
+export Z2M_VERSION
+export HA_VERSION
+
+cd $SCRIPT_DIR/../
+
+if [ "$Z2MENABLE" = "true" ]; then
+    echo "start docker with zigbee2mqtt"
+    docker compose --profile z2m up -d
+else
+    echo "start docker without zigbee2mqtt"
+    docker compose up -d
+fi
