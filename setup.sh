@@ -166,6 +166,12 @@ else
   serial:
     # Location of CC2531 USB sniffer
     port: /dev/ttyACM0
+    adapter: ember
+
+  device_options:
+    homeassistant:
+      last_seen:
+        enabled_by_default: true
 
   " | tee ./zigbee2mqtt/data/configuration.yaml
 fi
