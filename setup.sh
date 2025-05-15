@@ -157,6 +157,7 @@ else
 
   advanced:
     channel: $ZIGBEE_CHANNEL
+    last_seen: 'ISO_8601'
 
   frontend:
     # Optional, default 8080
@@ -167,6 +168,9 @@ else
     # Location of CC2531 USB sniffer
     port: /dev/ttyACM0
     adapter: ember
+
+  availability:
+    enabled: true
 
   device_options:
     homeassistant:
