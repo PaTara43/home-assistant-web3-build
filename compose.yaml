@@ -48,15 +48,18 @@ services:
 
   matter-server:
     container_name: matter-server
-    image: ghcr.io/matter-js/python-matter-server:${MATTER_VERSION}
+    image: ghcr.io/matter-js/matterjs-server:${MATTER_VERSION}
     profiles: [matter]
     restart: unless-stopped
     network_mode: host
-    security_opt:
-      - apparmor:unconfined
     volumes:
       - ./matter-server/data:/data
-      - /run/dbus:/run/dbus:ro
+    environment:
+      - STORAGE_PATH=/data
+      - LOG_LEVEL=info
+      # Use trustasia DCL mirror — original on.dcl.csa-iot.org may be throttled.
+      # Unsupported as of now. Waiting for support
+      #- MATTER_DCL_PRODUCTION_URL=https://on.main-net.trustasia.com
 
   music-assistant:
     container_name: music-assistant

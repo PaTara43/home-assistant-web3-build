@@ -64,7 +64,7 @@ cleanup_old() {
 cleanup_old "Mosquitto"       "$MQTT_CUR"   "eclipse-mosquitto:${MOSQUITTO_VERSION}"
 cleanup_old "Zigbee2MQTT"     "$Z2M_CUR"    "koenkk/zigbee2mqtt:${Z2M_VERSION}"
 cleanup_old "Home Assistant"  "$HA_CUR"     "ghcr.io/home-assistant/home-assistant:${HA_VERSION}"
-cleanup_old "Matter Server"   "$MATTER_CUR" "ghcr.io/matter-js/python-matter-server:${MATTER_VERSION}"
+cleanup_old "Matter Server"   "$MATTER_CUR" "ghcr.io/matter-js/matterjs-server:${MATTER_VERSION}"
 cleanup_old "Music Assistant" "$MA_CUR"     "ghcr.io/music-assistant/server:${MA_VERSION}"
 
 echo "Done."
