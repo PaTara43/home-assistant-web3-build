@@ -112,6 +112,48 @@ script is bind-mounted in and creates a hashed password file on first start usin
 path on your platform, edit `scripts/mosquitto.conf` and fall back to the legacy
 `password_file` option (commented at the bottom of that file).
 
+## Custom themes
+
+Themes are installed via a separate script:
+
+```sh
+bash scripts/install-themes.sh
+```
+
+This is idempotent — re-run it to update to the versions pinned in `scripts/packages.env`.
+
+Currently installed:
+
+- **iOS themes** — [basnijholt/lovelace-ios-themes](https://github.com/basnijholt/lovelace-ios-themes), pinned to `IOS_THEMES_VERSION`
+- **visionOS theme** — [Nezz/homeassistant-visionos-theme](https://github.com/Nezz/homeassistant-visionos-theme), pinned to `VISIONOS_THEME_VERSION`
+- **Pinout theme** — [PinoutLTD/HA.Themes](https://github.com/PinoutLTD/HA.Themes), pinned to `PINOUT_THEME_VERSION`
+
+Then restart Home Assistant and pick the theme in your profile settings.
+
+## Custom integrations
+
+Custom integrations are installed via a separate script:
+
+```sh
+bash scripts/install-custom-integrations.sh
+```
+
+This is idempotent — re-run it to update to the versions pinned in `scripts/packages.env`.
+
+Currently installed:
+
+- **Better Thermostat** — [KartoffelToby/better_thermostat](https://github.com/KartoffelToby/better_thermostat), pinned to `BETTER_THERMOSTAT_VERSION`
+- **Browser Mod** — [thomasloven/hass-browser_mod](https://github.com/thomasloven/hass-browser_mod), pinned to `BROWSER_MOD_VERSION`
+- **LocalTuya** — [rospogrigio/localtuya](https://github.com/rospogrigio/localtuya), pinned to `LOCALTUYA_VERSION`
+- **Yandex Smart Home** — [dext0r/yandex_smart_home](https://github.com/dext0r/yandex_smart_home), pinned to `YANDEX_SMART_HOME_VERSION`
+- **Yandex Station** — [AlexxIT/YandexStation](https://github.com/AlexxIT/YandexStation), pinned to `YANDEX_STATION_VERSION`
+
+Then restart Home Assistant for the new integrations to load:
+
+```sh
+docker compose restart homeassistant
+```
+
 ## Resetting
 
 To wipe the stack and start over:
