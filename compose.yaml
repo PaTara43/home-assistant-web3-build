@@ -1,18 +1,16 @@
 services:
   mosquitto:
     container_name: mosquitto
-    build:
-      context: ./scripts
-      dockerfile: mosquitto.Dockerfile
-      args:
-        MOSQUITTO_VERSION: ${MOSQUITTO_VERSION}
+    image: eclipse-mosquitto:${MOSQUITTO_VERSION}
     restart: unless-stopped
     ports:
       - "1883:1883"
-      - "9001:9001"
     volumes:
-      - ${CONFIG_PATH}/mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ${CONFIG_PATH}/mosquitto:/mosquitto
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto:/mosquitto
+      - ./scripts/mosquitto-docker-entrypoint.sh:/mosquitto-docker-entrypoint.sh:ro
+    entrypoint: ["sh", "/mosquitto-docker-entrypoint.sh"]
+    command: ["/usr/sbin/mosquitto", "-c", "/mosquitto/config/mosquitto.conf"]
     environment:
       - MOSQUITTO_PASSWORD=${MOSQUITTO_PASSWORD}
 
@@ -21,25 +19,59 @@ services:
     image: koenkk/zigbee2mqtt:${Z2M_VERSION}
     profiles: [z2m]
     restart: unless-stopped
+    depends_on:
+      - mosquitto
     volumes:
-      - ${CONFIG_PATH}/zigbee2mqtt/data:/app/data
+      - ./zigbee2mqtt/data:/app/data
       - /run/udev:/run/udev:ro
     network_mode: host
     environment:
       - TZ=${TZ}
     devices:
-      # Make sure this matched your adapter location
+      # Make sure this matches your adapter location.
       - ${Z2MPATH}:/dev/ttyACM0
 
   homeassistant:
     container_name: homeassistant
     image: ghcr.io/home-assistant/home-assistant:${HA_VERSION}
     restart: unless-stopped
+    depends_on:
+      - mosquitto
     volumes:
-      - ${CONFIG_PATH}/homeassistant:/config
-      - ${CONFIG_PATH}/mosquitto:/etc/mosquitto
-      - ${CONFIG_PATH}/zigbee2mqtt:/opt/zigbee2mqtt
+      - ./homeassistant:/config
+      - ./mosquitto:/etc/mosquitto
+      - ./zigbee2mqtt:/opt/zigbee2mqtt
       - /etc/localtime:/etc/localtime:ro
       - /run/dbus:/run/dbus:ro
     privileged: true
     network_mode: host
+
+  matter-server:
+    container_name: matter-server
+    image: ghcr.io/matter-js/python-matter-server:${MATTER_VERSION}
+    profiles: [matter]
+    restart: unless-stopped
+    network_mode: host
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - ./matter-server/data:/data
+      - /run/dbus:/run/dbus:ro
+
+  music-assistant:
+    container_name: music-assistant
+    image: ghcr.io/music-assistant/server:${MA_VERSION}
+    profiles: [music]
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - ./music-assistant/data:/data
+      # Optionally expose your local music library to MA. Uncomment and edit:
+      # - /path/to/your/music:/media:ro
+    environment:
+      - LOG_LEVEL=info

@@ -1,6 +1,9 @@
-homeassistant
-zigbee2mqtt
-mosquitto
-ipfs
-libp2p-ws-proxy
-.env
+# Runtime data — created by docker on first start.
+homeassistant/
+mosquitto/
+zigbee2mqtt/
+matter-server/
+music-assistant/
+
+# Local backups produced by sed -i.bak
+*.bak
