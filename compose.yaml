@@ -8,7 +8,7 @@ services:
     volumes:
       - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - ./mosquitto:/mosquitto
-      - ./scripts/mosquitto-docker-entrypoint.sh:/mosquitto-docker-entrypoint.sh:ro
+      - ./scripts/addons_conf/mosquitto/mosquitto-docker-entrypoint.sh:/mosquitto-docker-entrypoint.sh:ro
     entrypoint: ["sh", "/mosquitto-docker-entrypoint.sh"]
     command: ["/usr/sbin/mosquitto", "-c", "/mosquitto/config/mosquitto.conf"]
     environment:

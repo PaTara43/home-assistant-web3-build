@@ -1,15 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# Resolve repo root from the location of this script, then cd there. This makes
-# the script work whether you run `bash scripts/setup.sh` from the repo root,
-# or call it by absolute path from anywhere else.
+# Resolve repo root from the location of this script, then cd there.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 echo "Repo root: $REPO_ROOT"
 echo "This script will create runtime directories and start docker containers."
+echo "It is intended for a CLEAN install. Use update.sh for subsequent runs."
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -25,30 +24,49 @@ upsert_env_var() {
   fi
 }
 
+profiles_has() {
+  echo ",${PROFILES}," | grep -q ",$1,"
+}
+
 # ---------------------------------------------------------------------------
 # Sanity checks
 # ---------------------------------------------------------------------------
 if ! command -v docker &> /dev/null; then
-  echo "ERROR: docker not found. Install Docker first."
+  echo "ERROR: docker not found. Install Docker first." >&2
   exit 1
 fi
 echo "Docker found."
 
 if ! id -nG "$USER" | grep -qw "docker"; then
-  echo "ERROR: $USER is not in the 'docker' group. Run: sudo usermod -aG docker \$USER"
+  echo "ERROR: $USER is not in the 'docker' group. Run: sudo usermod -aG docker \$USER" >&2
   exit 1
 fi
 echo "$USER is in the docker group."
 
+if ! command -v envsubst &> /dev/null; then
+  echo "ERROR: envsubst not found. Install: sudo apt-get install -y gettext-base" >&2
+  exit 1
+fi
+echo "envsubst found."
+
 if [ ! -f .env ]; then
-  echo "ERROR: .env file not found in repo root. It should be tracked by the repo."
+  echo "ERROR: .env file not found in repo root. It should be tracked by the repo." >&2
   exit 1
 fi
 
+# Refuse to run on a non-clean install.
+for d in homeassistant mosquitto zigbee2mqtt matter-server music-assistant; do
+  if [ -e "./$d" ]; then
+    echo "ERROR: ./$d already exists. setup.sh expects a clean install." >&2
+    echo "       To reset, run: bash scripts/stop.sh && rm -rf homeassistant mosquitto zigbee2mqtt matter-server music-assistant && git checkout -- .env" >&2
+    echo "       To update an existing stack instead, run: bash scripts/update.sh" >&2
+    exit 1
+  fi
+done
+echo "Workspace is clean, proceeding."
+
 # ---------------------------------------------------------------------------
-# Load env (defaults from .env + pinned versions from packages.env)
-# Done BEFORE coordinator detection so the placeholder Z2MPATH= in .env
-# doesn't overwrite the value we're about to detect.
+# Load env
 # ---------------------------------------------------------------------------
 set -a
 # shellcheck disable=SC1091
@@ -60,8 +78,6 @@ set +a
 # ---------------------------------------------------------------------------
 # Detect Zigbee coordinator
 # ---------------------------------------------------------------------------
-Z2MENABLE=true
-
 if [ -d /dev/serial/by-id/ ] && [ -n "$(ls -A /dev/serial/by-id/ 2>/dev/null)" ]; then
   echo "Zigbee coordinator candidates found in /dev/serial/by-id/"
   NUMB=$(ls -1q /dev/serial/by-id/ | wc -l)
@@ -81,12 +97,11 @@ else
   while true; do
     read -r -p "Continue without Zigbee2MQTT? (Y/n) " yn
     case "$yn" in
-      [yY]|"") echo "OK, continuing without Z2M."; Z2MENABLE=false; break ;;
+      [yY]|"") echo "OK, continuing without Z2M."; Z2MPATH="."; break ;;
       [nN]) echo "Exiting..."; exit 1 ;;
       *) echo "Invalid response" ;;
     esac
   done
-  Z2MPATH="."
 fi
 
 export Z2MPATH
@@ -95,119 +110,36 @@ echo "Z2MPATH=$Z2MPATH"
 # ---------------------------------------------------------------------------
 # Mosquitto + z2m: directories, config, password
 # ---------------------------------------------------------------------------
-if [ -d ./mosquitto ]; then
-  echo "mosquitto directory already exists, reusing existing password."
-  MOSQUITTO_PASSWORD="$(cat ./mosquitto/raw.txt)"
-else
-  echo "Creating mosquitto and zigbee2mqtt directories..."
-  mkdir -p mosquitto/config mosquitto/data mosquitto/log zigbee2mqtt/data
+echo "Creating mosquitto and zigbee2mqtt directories..."
+mkdir -p mosquitto/config mosquitto/data mosquitto/log zigbee2mqtt/data
 
-  MOSQUITTO_PASSWORD="$(openssl rand -hex 16)"
-  echo -n "$MOSQUITTO_PASSWORD" > ./mosquitto/raw.txt
-  chmod 600 ./mosquitto/raw.txt
-
-  cp ./scripts/mosquitto.conf ./mosquitto/config/mosquitto.conf
-
-  cat > ./zigbee2mqtt/data/configuration.yaml <<EOF
-# Home Assistant integration (MQTT discovery)
-homeassistant:
-  enabled: true
-  legacy_action_sensor: true
-
-# Allow new devices to join (toggle from frontend later)
-permit_join: false
-
-mqtt:
-  base_topic: zigbee2mqtt
-  server: 'mqtt://localhost'
-  user: connectivity
-  password: $MOSQUITTO_PASSWORD
-
-advanced:
-  channel: $ZIGBEE_CHANNEL
-  last_seen: 'ISO_8601'
-
-frontend:
-  port: 8099
-
-serial:
-  port: /dev/ttyACM0
-  adapter: $ZIGBEE_ADAPTER
-
-availability:
-  enabled: true
-
-device_options:
-  homeassistant:
-    last_seen:
-      enabled_by_default: true
-EOF
-fi
+MOSQUITTO_PASSWORD="$(openssl rand -hex 16)"
+echo -n "$MOSQUITTO_PASSWORD" > ./mosquitto/raw.txt
+chmod 600 ./mosquitto/raw.txt
 export MOSQUITTO_PASSWORD
 
-# ---------------------------------------------------------------------------
-# Home Assistant: pre-seed MQTT integration on first run
-# ---------------------------------------------------------------------------
-if [ ! -d ./homeassistant/.storage ]; then
-  echo "Pre-seeding Home Assistant MQTT integration..."
-  mkdir -p ./homeassistant/.storage
+cp ./scripts/addons_conf/mosquitto/mosquitto.conf ./mosquitto/config/mosquitto.conf
 
-  cat > ./homeassistant/.storage/core.config_entries <<EOF
-{
-  "version": 1,
-  "minor_version": 1,
-  "key": "core.config_entries",
-  "data": {
-    "entries": [
-      {
-        "entry_id": "92c28c246bb8163e5cc9e6dc5b5d8606",
-        "version": 1,
-        "domain": "mqtt",
-        "title": "localhost",
-        "data": {
-          "broker": "localhost",
-          "port": 1883,
-          "username": "connectivity",
-          "password": "$MOSQUITTO_PASSWORD",
-          "discovery": true,
-          "discovery_prefix": "homeassistant"
-        },
-        "options": {},
-        "pref_disable_new_entities": false,
-        "pref_disable_polling": false,
-        "source": "user",
-        "unique_id": null,
-        "disabled_by": null
-      }
-    ]
-  }
-}
-EOF
-else
-  echo "homeassistant/.storage already exists, skipping pre-seed."
-fi
+# Render zigbee2mqtt config from template using current env values.
+envsubst < ./scripts/addons_conf/zigbee2mqtt/configuration.yaml.tpl \
+  > ./zigbee2mqtt/data/configuration.yaml
 
 # ---------------------------------------------------------------------------
-# Optional services: prepare data dirs (cheap; harmless if profile is off)
+# Home Assistant: pre-seed MQTT integration
 # ---------------------------------------------------------------------------
-mkdir -p matter-server/data
-mkdir -p music-assistant/data
+echo "Pre-seeding Home Assistant MQTT integration..."
+mkdir -p ./homeassistant/.storage
+envsubst < ./scripts/addons_conf/ha_integrations/mqtt-config-entry.tpl \
+  > ./homeassistant/.storage/core.config_entries
 
 # ---------------------------------------------------------------------------
-# Persist runtime values into .env so update.sh / stop.sh can reuse them
-# ---------------------------------------------------------------------------
-upsert_env_var "MOSQUITTO_PASSWORD" "$MOSQUITTO_PASSWORD" ".env"
-upsert_env_var "Z2MPATH" "$Z2MPATH" ".env"
-
-# ---------------------------------------------------------------------------
-# Build profiles list and start
+# Build profiles list
 # ---------------------------------------------------------------------------
 PROFILES="${COMPOSE_PROFILES:-}"
-if [ "$Z2MENABLE" = "true" ]; then
-  # Add z2m if missing
+if [ "$Z2MPATH" != "." ]; then
   if [ -z "$PROFILES" ]; then
     PROFILES="z2m"
-  elif ! echo ",$PROFILES," | grep -q ",z2m,"; then
+  elif ! profiles_has "z2m"; then
     PROFILES="${PROFILES},z2m"
   fi
 else
@@ -216,6 +148,25 @@ else
 fi
 export COMPOSE_PROFILES="$PROFILES"
 
+# ---------------------------------------------------------------------------
+# Optional services: prepare data dirs only if their profiles are enabled
+# ---------------------------------------------------------------------------
+if profiles_has "matter"; then
+  mkdir -p matter-server/data
+fi
+if profiles_has "music"; then
+  mkdir -p music-assistant/data
+fi
+
+# ---------------------------------------------------------------------------
+# Persist runtime values into .env
+# ---------------------------------------------------------------------------
+upsert_env_var "MOSQUITTO_PASSWORD" "$MOSQUITTO_PASSWORD" ".env"
+upsert_env_var "Z2MPATH" "$Z2MPATH" ".env"
+
+# ---------------------------------------------------------------------------
+# Start
+# ---------------------------------------------------------------------------
 echo "----"
 echo "Starting docker compose with profiles: '${COMPOSE_PROFILES:-<none>}'"
 echo "----"
