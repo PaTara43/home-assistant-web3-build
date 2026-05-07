@@ -199,16 +199,19 @@ if echo ",${FULL_PROFILES}," | grep -q ",matter-hub,"; then
   chmod 600 ./homeassistant/raw.txt
 
   echo "Waiting for Home Assistant API on http://localhost:8123 ..."
-  for i in $(seq 1 90); do
-    if curl -fsS -o /dev/null "http://localhost:8123/api/onboarding"; then
+  HA_READY=0
+  for i in $(seq 1 36); do
+    if curl -fs -o /dev/null "http://localhost:8123/api/onboarding"; then
+      HA_READY=1
       break
     fi
-    sleep 2
-    if [ "$i" -eq 90 ]; then
-      echo "ERROR: Home Assistant did not come up within 180s." >&2
-      exit 1
-    fi
+    echo "  Home Assistant hasn't responded yet — that's fine, it's still booting. Retrying in 5s... (${i}/36)"
+    sleep 5
   done
+  if [ "$HA_READY" -ne 1 ]; then
+    echo "ERROR: Home Assistant did not come up within 180s." >&2
+    exit 1
+  fi
   echo "Home Assistant is responding."
 
   CLIENT_ID="http://localhost:8123/"
