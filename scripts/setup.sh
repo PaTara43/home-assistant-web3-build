@@ -191,80 +191,84 @@ echo "----"
 docker compose up -d
 
 # ---------------------------------------------------------------------------
-# Headless HA onboarding (only when matter-hub is enabled).
+# Headless HA onboarding (always done — gives us a ready-to-use admin account
+# and lets the UI skip the wizard on first login). Whether matter-hub starts
+# afterwards depends on the profile.
 #
 # Flow:
 #   1. Wait for /api/onboarding to respond.
 #   2. POST /api/onboarding/users  -> auth_code (creates the first HA user).
 #   3. POST /auth/token            -> short-lived access_token.
 #   4. WebSocket auth/long_lived_access_token -> token for matter-hub.
-#   5. Persist token in .env, then bring matter-hub up.
-#
-# Steps 2/3/4 of HA's onboarding wizard (location, analytics, finish) are left
-# for the user to complete in the UI on first login.
+#   5. POST core_config / analytics / integration -> finish wizard headlessly.
+#   6. Persist token in .env, optionally start matter-hub.
 # ---------------------------------------------------------------------------
-HA_ONBOARDED=0
+HA_ADMIN_USERNAME="admin"
+HA_ADMIN_LANGUAGE="en"
+
+echo -n "$HA_ADMIN_PASSWORD" > ./homeassistant/raw.txt
+chmod 600 ./homeassistant/raw.txt
+
 if echo ",${FULL_PROFILES}," | grep -q ",matter-hub,"; then
-  echo -n "$HA_ADMIN_PASSWORD" > ./homeassistant/raw.txt
-  chmod 600 ./homeassistant/raw.txt
   echo -n "$HAMH_HTTP_AUTH_PASSWORD" > ./matter-hub/raw.txt
   chmod 600 ./matter-hub/raw.txt
+fi
 
-  echo "Waiting for Home Assistant API on http://localhost:8123 ..."
-  HA_READY=0
-  for i in $(seq 1 18); do
-    if curl -fs -o /dev/null "http://localhost:8123/api/onboarding"; then
-      HA_READY=1
-      break
-    fi
-    JOKE_JSON="$(curl -fs --max-time 3 \
-      -H 'Accept: application/json' \
-      -A 'home-assistant-web3-build setup (https://github.com/PaTara43/home-assistant-web3-build)' \
-      'https://icanhazdadjoke.com/' 2>/dev/null || true)"
-    JOKE="$(printf '%s' "$JOKE_JSON" | python3 -c 'import json,sys
+echo "Waiting for Home Assistant API on http://localhost:8123 ..."
+HA_READY=0
+for i in $(seq 1 18); do
+  if curl -fs -o /dev/null "http://localhost:8123/api/onboarding"; then
+    HA_READY=1
+    break
+  fi
+  JOKE_JSON="$(curl -fs --max-time 3 \
+    -H 'Accept: application/json' \
+    -A 'home-assistant-web3-build setup (https://github.com/PaTara43/home-assistant-web3-build)' \
+    'https://v2.jokeapi.dev/joke/Any?type=single&safe-mode' 2>/dev/null || true)"
+  JOKE="$(printf '%s' "$JOKE_JSON" | python3 -c 'import json,sys
 try: print(json.load(sys.stdin).get("joke","").strip())
 except: pass' 2>/dev/null || true)"
-    if [ -n "$JOKE" ]; then
-      echo "  [${i}/18] HA still booting. Here's a dad joke while you wait:"
-      echo "         $JOKE"
-    else
-      echo "  [${i}/18] Home Assistant hasn't responded yet — that's fine, it's still booting. Retrying in 10s..."
-    fi
-    sleep 10
-  done
-  if [ "$HA_READY" -ne 1 ]; then
-    echo "ERROR: Home Assistant did not come up within 180s." >&2
-    exit 1
+  if [ -n "$JOKE" ]; then
+    echo "  [${i}/18] HA still booting. Here's a joke while you wait:"
+    printf '%s\n' "$JOKE" | sed 's/^/         /'
+  else
+    echo "  [${i}/18] Home Assistant hasn't responded yet — that's fine, it's still booting. Retrying in 10s..."
   fi
-  echo "Home Assistant is responding."
+  sleep 10
+done
+if [ "$HA_READY" -ne 1 ]; then
+  echo "ERROR: Home Assistant did not come up within 180s." >&2
+  exit 1
+fi
+echo "Home Assistant is responding."
 
-  CLIENT_ID="http://localhost:8123/"
+CLIENT_ID="http://localhost:8123/"
 
-  echo "Creating first HA user '${HA_ADMIN_USERNAME}' via /api/onboarding/users ..."
-  ONBOARD_BODY="$(python3 -c 'import json,sys; cid,name,user,pwd,lang=sys.argv[1:6]; print(json.dumps({"client_id":cid,"name":name,"username":user,"password":pwd,"language":lang}))' \
-    "$CLIENT_ID" "Admin" "$HA_ADMIN_USERNAME" "$HA_ADMIN_PASSWORD" "$HA_ADMIN_LANGUAGE")"
-  ONBOARD_RESP="$(curl -fsS -X POST "http://localhost:8123/api/onboarding/users" \
-    -H "Content-Type: application/json" \
-    -d "$ONBOARD_BODY")"
-  AUTH_CODE="$(printf '%s' "$ONBOARD_RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["auth_code"])')"
-  if [ -z "$AUTH_CODE" ]; then
-    echo "ERROR: failed to obtain auth_code from onboarding. Response: $ONBOARD_RESP" >&2
-    exit 1
-  fi
+echo "Creating first HA user '${HA_ADMIN_USERNAME}' via /api/onboarding/users ..."
+ONBOARD_BODY="$(python3 -c 'import json,sys; cid,name,user,pwd,lang=sys.argv[1:6]; print(json.dumps({"client_id":cid,"name":name,"username":user,"password":pwd,"language":lang}))' \
+  "$CLIENT_ID" "Admin" "$HA_ADMIN_USERNAME" "$HA_ADMIN_PASSWORD" "$HA_ADMIN_LANGUAGE")"
+ONBOARD_RESP="$(curl -fsS -X POST "http://localhost:8123/api/onboarding/users" \
+  -H "Content-Type: application/json" \
+  -d "$ONBOARD_BODY")"
+AUTH_CODE="$(printf '%s' "$ONBOARD_RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["auth_code"])')"
+if [ -z "$AUTH_CODE" ]; then
+  echo "ERROR: failed to obtain auth_code from onboarding. Response: $ONBOARD_RESP" >&2
+  exit 1
+fi
 
-  echo "Exchanging auth_code for access token ..."
-  TOKEN_RESP="$(curl -fsS -X POST "http://localhost:8123/auth/token" \
-    --data-urlencode "client_id=${CLIENT_ID}" \
-    --data-urlencode "grant_type=authorization_code" \
-    --data-urlencode "code=${AUTH_CODE}")"
-  ACCESS_TOKEN="$(printf '%s' "$TOKEN_RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
-  if [ -z "$ACCESS_TOKEN" ]; then
-    echo "ERROR: failed to obtain access_token. Response: $TOKEN_RESP" >&2
-    exit 1
-  fi
+echo "Exchanging auth_code for access token ..."
+TOKEN_RESP="$(curl -fsS -X POST "http://localhost:8123/auth/token" \
+  --data-urlencode "client_id=${CLIENT_ID}" \
+  --data-urlencode "grant_type=authorization_code" \
+  --data-urlencode "code=${AUTH_CODE}")"
+ACCESS_TOKEN="$(printf '%s' "$TOKEN_RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+if [ -z "$ACCESS_TOKEN" ]; then
+  echo "ERROR: failed to obtain access_token. Response: $TOKEN_RESP" >&2
+  exit 1
+fi
 
-  echo "Requesting long-lived access token for matter-hub ..."
-  LL_TOKEN="$(docker compose exec -T homeassistant python3 - "$ACCESS_TOKEN" <<'PYEOF'
+echo "Requesting long-lived access token for matter-hub ..."
+LL_TOKEN="$(docker compose exec -T homeassistant python3 - "$ACCESS_TOKEN" <<'PYEOF'
 import asyncio, sys, aiohttp
 
 async def main():
@@ -290,49 +294,46 @@ async def main():
 asyncio.run(main())
 PYEOF
 )"
-  LL_TOKEN="$(printf '%s' "$LL_TOKEN" | tr -d '\r\n')"
-  if [ -z "$LL_TOKEN" ]; then
-    echo "ERROR: long-lived token came back empty." >&2
-    exit 1
-  fi
-
-  upsert_env_var "HA_ADMIN_PASSWORD" "$HA_ADMIN_PASSWORD" ".env"
-  upsert_env_var "HAMH_HTTP_AUTH_PASSWORD" "$HAMH_HTTP_AUTH_PASSWORD" ".env"
-  upsert_env_var "HAMH_HOME_ASSISTANT_ACCESS_TOKEN" "$LL_TOKEN" ".env"
-  HA_ONBOARDED=1
-  echo "Long-lived token persisted in .env."
-
-  # -------------------------------------------------------------------------
-  # Finish HA onboarding (steps 2-4) headlessly so that the UI doesn't try
-  # to resume the wizard on first login (which fails without a browser
-  # session). All four endpoints require Bearer auth except /users.
-  #   - core_config: empty body -> HA uses defaults; TZ comes from container env.
-  #   - analytics  : empty body -> opt-out by default.
-  #   - integration: requires client_id + redirect_uri; we don't use the
-  #                  returned auth_code, the call is just to flip the step
-  #                  to "done".
-  # -------------------------------------------------------------------------
-  echo "Finishing HA onboarding (core_config, analytics, integration) ..."
-  for step in core_config analytics; do
-    curl -fsS -o /dev/null -X POST "http://localhost:8123/api/onboarding/${step}" \
-      -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-      -H "Content-Type: application/json" \
-      -d '{}' \
-      || echo "WARNING: onboarding step '${step}' returned non-2xx (continuing)." >&2
-  done
-  INTEGRATION_BODY="$(python3 -c 'import json,sys; cid=sys.argv[1]; print(json.dumps({"client_id":cid,"redirect_uri":cid}))' "$CLIENT_ID")"
-  curl -fsS -o /dev/null -X POST "http://localhost:8123/api/onboarding/integration" \
-    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "$INTEGRATION_BODY" \
-    || echo "WARNING: onboarding step 'integration' returned non-2xx (continuing)." >&2
-  echo "HA onboarding completed."
+LL_TOKEN="$(printf '%s' "$LL_TOKEN" | tr -d '\r\n')"
+if [ -z "$LL_TOKEN" ]; then
+  echo "ERROR: long-lived token came back empty." >&2
+  exit 1
 fi
 
+upsert_env_var "HA_ADMIN_PASSWORD" "$HA_ADMIN_PASSWORD" ".env"
+upsert_env_var "HAMH_HTTP_AUTH_PASSWORD" "$HAMH_HTTP_AUTH_PASSWORD" ".env"
+upsert_env_var "HAMH_HOME_ASSISTANT_ACCESS_TOKEN" "$LL_TOKEN" ".env"
+echo "Long-lived token persisted in .env."
+
 # ---------------------------------------------------------------------------
-# Stage 2: bring up matter-hub now that the token is in .env.
+# Finish HA onboarding (steps 2-4) headlessly so that the UI doesn't try
+# to resume the wizard on first login (which fails without a browser session).
+#   - core_config: empty body -> HA uses defaults; TZ comes from container env.
+#   - analytics  : empty body -> opt-out by default.
+#   - integration: requires client_id + redirect_uri; the returned auth_code
+#                  is unused — we just need the step flipped to "done".
 # ---------------------------------------------------------------------------
-if [ "$HA_ONBOARDED" -eq 1 ]; then
+echo "Finishing HA onboarding (core_config, analytics, integration) ..."
+for step in core_config analytics; do
+  curl -fsS -o /dev/null -X POST "http://localhost:8123/api/onboarding/${step}" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{}' \
+    || echo "WARNING: onboarding step '${step}' returned non-2xx (continuing)." >&2
+done
+INTEGRATION_BODY="$(python3 -c 'import json,sys; cid=sys.argv[1]; print(json.dumps({"client_id":cid,"redirect_uri":cid}))' "$CLIENT_ID")"
+curl -fsS -o /dev/null -X POST "http://localhost:8123/api/onboarding/integration" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$INTEGRATION_BODY" \
+  || echo "WARNING: onboarding step 'integration' returned non-2xx (continuing)." >&2
+echo "HA onboarding completed."
+
+# ---------------------------------------------------------------------------
+# Stage 2: bring up matter-hub now that the token is in .env (only if the
+# profile is enabled — onboarding always runs, matter-hub does not).
+# ---------------------------------------------------------------------------
+if echo ",${FULL_PROFILES}," | grep -q ",matter-hub,"; then
   # Reload .env so docker compose sees HAMH_HOME_ASSISTANT_ACCESS_TOKEN,
   # then restore the reconciled COMPOSE_PROFILES (which sourcing .env clobbered).
   set -a
@@ -352,7 +353,7 @@ echo "  Home Assistant : http://localhost:8123"
 echo "  Zigbee2MQTT    : http://localhost:8099  (profile: z2m)"
 echo "  Music Assistant: http://localhost:8095  (profile: music)"
 echo "  Matter Server  : ws://localhost:5580/ws (profile: matter)"
-echo "  Matter Hub     : http://localhost:${HAMH_HTTP_PORT:-8482} (profile: matter-hub)"
+echo "  Matter Hub     : http://localhost:8482  (profile: matter-hub)"
 echo ""
 echo "============================================================"
 echo " Generated credentials"
@@ -360,11 +361,11 @@ echo ""
 echo "  Master password (HA admin / matter-hub UI / z2m frontend token):"
 echo "    ${MASTER_PASSWORD}"
 echo ""
-if [ "$HA_ONBOARDED" -eq 1 ]; then
-  echo "  Home Assistant       http://localhost:8123"
-  echo "    user: ${HA_ADMIN_USERNAME}    pass: <master>    file: homeassistant/raw.txt"
-  echo ""
-  echo "  Matter Hub web UI    http://localhost:${HAMH_HTTP_PORT:-8482}"
+echo "  Home Assistant       http://localhost:8123"
+echo "    user: ${HA_ADMIN_USERNAME}    pass: <master>    file: homeassistant/raw.txt"
+echo ""
+if echo ",${FULL_PROFILES}," | grep -q ",matter-hub,"; then
+  echo "  Matter Hub web UI    http://localhost:8482"
   echo "    user: admin    pass: <master>    file: matter-hub/raw.txt"
   echo ""
   echo "  Note: a long-lived HA token for matter-hub is in .env"

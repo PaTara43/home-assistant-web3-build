@@ -70,10 +70,10 @@ services:
     volumes:
       - ./matter-hub/data:/data
     environment:
-      - HAMH_HOME_ASSISTANT_URL=${HAMH_HOME_ASSISTANT_URL}
+      - HAMH_HOME_ASSISTANT_URL=http://localhost:8123/
       - HAMH_HOME_ASSISTANT_ACCESS_TOKEN=${HAMH_HOME_ASSISTANT_ACCESS_TOKEN}
-      - HAMH_HTTP_PORT=${HAMH_HTTP_PORT}
-      - HAMH_LOG_LEVEL=${HAMH_LOG_LEVEL}
+      - HAMH_HTTP_PORT=8482
+      - HAMH_LOG_LEVEL=info
       - HAMH_HTTP_AUTH_USERNAME=admin
       - HAMH_HTTP_AUTH_PASSWORD=${HAMH_HTTP_AUTH_PASSWORD}
 

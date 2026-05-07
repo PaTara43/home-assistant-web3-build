@@ -66,8 +66,7 @@ Edit `.env`. The repo ships it with sensible defaults:
 
   Examples: `COMPOSE_PROFILES=matter,music`, or leave empty for HA + Mosquitto only.
 
-- `HA_ADMIN_USERNAME`, `HA_ADMIN_LANGUAGE` — used **only** when `matter-hub` is in `COMPOSE_PROFILES`. `setup.sh` will headlessly create the first HA user with these values and a generated 16-byte password (saved to `homeassistant/raw.txt` and printed at the end of setup).
-- `HAMH_HOME_ASSISTANT_URL`, `HAMH_HTTP_PORT`, `HAMH_LOG_LEVEL` — matter-hub tunables. Defaults are sane for the bundled stack.
+`setup.sh` always headlessly onboards Home Assistant: it creates a single `admin` user with a 16-byte hex password (the same password is reused as matter-hub HTTP basic-auth password and as the zigbee2mqtt frontend token — one master password for all UI surfaces), finishes the rest of the wizard via the API, mints a 10-year long-lived HA token, and prints everything at the end of setup. Mosquitto's password is independent (it's a service-to-service credential).
 
 Pinned image versions and add-on versions live in `scripts/packages.env`. Touch only if you know what you're doing.
 
@@ -91,7 +90,8 @@ What it does:
 6. Persists `MOSQUITTO_PASSWORD` and `Z2MPATH` back into `.env` for `update.sh` and the compose file to reuse.
 7. Computes `COMPOSE_PROFILES` (adds/removes `z2m` based on stick presence), creates data directories for active optional profiles only.
 8. Runs `docker compose up -d`.
-9. **If `matter-hub` is in `COMPOSE_PROFILES`:** waits for HA's API, creates the first HA user via `/api/onboarding/users` with a generated 16-byte password, exchanges the auth code for an access token, and asks HA's WebSocket API for a 10-year long-lived token. The token is written into `.env` as `HAMH_HOME_ASSISTANT_ACCESS_TOKEN`, the admin password into `homeassistant/raw.txt` (chmod 600), and `matter-hub` is then started in a second `docker compose up -d`. The credentials are also printed at the end of setup. Steps 2–4 of HA's onboarding wizard (location, analytics, finish) are intentionally left for you to complete in the UI on first login.
+9. Waits for HA's API, then runs **all four** onboarding steps headlessly: creates the `admin` user with the master password (saved to `homeassistant/raw.txt`, chmod 600), exchanges the auth code for an access token, mints a 10-year long-lived token via the WebSocket API, and POSTs `core_config` / `analytics` / `integration` to finish the wizard. The token is persisted in `.env` as `HAMH_HOME_ASSISTANT_ACCESS_TOKEN`. Location/units/currency are left at HA defaults — change them later in Settings → System → General.
+10. **If `matter-hub` is in `COMPOSE_PROFILES`:** runs a second `docker compose up -d` to start matter-hub with the now-available token. matter-hub's web UI is protected with HTTP basic auth (`admin` / master password); credentials are also written to `matter-hub/raw.txt`.
 
 ```sh
 bash scripts/setup.sh
@@ -225,23 +225,9 @@ For Thread devices you need a separate Thread Border Router (Apple HomePod, Goog
 
 This is the **opposite direction** from `matter-server`: matter-hub takes entities you have in Home Assistant and re-publishes them as Matter devices, so Apple Home / Google Home / Alexa can control them. Image: `ghcr.io/riddix/home-assistant-matter-hub`, pinned to `MATTER_HUB_VERSION` in `scripts/packages.env`.
 
-**Adding it on a clean install.** Put `matter-hub` in `COMPOSE_PROFILES` *before* running `setup.sh`. The script will:
+**Setup-time provisioning.** Headless HA onboarding always runs in `setup.sh`, regardless of whether `matter-hub` is enabled — this means the long-lived HA token is **always** minted on a clean install and lives in `.env`. So adding `matter-hub` to `COMPOSE_PROFILES` later and running `update.sh` Just Works: the token is already there. The matter-hub web UI is protected by HTTP basic auth (`admin` / master password from `homeassistant/raw.txt`).
 
-1. Bring up the rest of the stack (HA, MQTT, etc.) without matter-hub.
-2. Wait for HA, headlessly run step 1 of HA's onboarding to create the `HA_ADMIN_USERNAME` user with a 16-byte hex password.
-3. Mint a 10-year long-lived access token bound to that user, write it to `.env` as `HAMH_HOME_ASSISTANT_ACCESS_TOKEN`.
-4. Start matter-hub.
-
-The admin password is written to `homeassistant/raw.txt` (chmod 600, gitignored) and **echoed in the setup logs** so you can capture it. **Don't delete the `admin` user later** — the matter-hub token is bound to it; if you remove it, matter-hub will lose its connection to HA. Use the admin user as your day-to-day HA login, or just create a personal account next to it and leave admin alone.
-
-**Adding it after the fact.** If you already ran `setup.sh` without `matter-hub`, HA is already onboarded by you in the UI. In that case `update.sh` cannot bootstrap a token (the onboarding API is closed). You have to:
-
-1. In HA UI: Profile → Security → Long-Lived Access Tokens → Create.
-2. Paste it into `.env` as `HAMH_HOME_ASSISTANT_ACCESS_TOKEN=...`.
-3. Add `matter-hub` to `COMPOSE_PROFILES`.
-4. Run `bash scripts/update.sh`.
-
-`update.sh` will refuse to start matter-hub if the profile is enabled but the token is empty.
+**Don't delete the `admin` HA user later** — the matter-hub access token is bound to it. Use it as your daily login, or create a personal account next to it.
 
 **Pairing the bridge.** After matter-hub is up, open `http://localhost:8482` and follow the bridge configuration UI to expose entities; then commission the bridge from your ecosystem of choice (Home app, etc.).
 

@@ -165,19 +165,17 @@ fi
 export COMPOSE_PROFILES="$PROFILES"
 
 # ---------------------------------------------------------------------------
-# matter-hub sanity: if profile is on but no access token, refuse to start it.
-# (Token is normally provisioned headlessly by setup.sh. If matter-hub was
-# added to COMPOSE_PROFILES manually after setup, the user must generate a
-# long-lived token in HA UI and put it in .env.)
+# matter-hub sanity: token is provisioned headlessly by setup.sh and lives
+# in .env regardless of profile state. If something nuked it, refuse to start
+# matter-hub for this run (compose would happily launch it with an empty
+# token, which then 401s against HA endlessly).
 # ---------------------------------------------------------------------------
-if profiles_has "matter-hub"; then
-  if [ -z "${HAMH_HOME_ASSISTANT_ACCESS_TOKEN:-}" ]; then
-    echo "WARNING: 'matter-hub' is in COMPOSE_PROFILES but HAMH_HOME_ASSISTANT_ACCESS_TOKEN is empty." >&2
-    echo "         Generate a long-lived token in HA (Profile -> Security) and set it in .env," >&2
-    echo "         or remove 'matter-hub' from COMPOSE_PROFILES. Skipping matter-hub for this run." >&2
-    PROFILES="$(echo ",$PROFILES," | sed 's/,matter-hub,/,/g; s/^,//; s/,$//')"
-    export COMPOSE_PROFILES="$PROFILES"
-  fi
+if profiles_has "matter-hub" && [ -z "${HAMH_HOME_ASSISTANT_ACCESS_TOKEN:-}" ]; then
+  echo "WARNING: 'matter-hub' is in COMPOSE_PROFILES but HAMH_HOME_ASSISTANT_ACCESS_TOKEN is empty in .env." >&2
+  echo "         Restore it from a backup, or do a full reset (stop.sh + rm -rf data dirs + git checkout -- .env + setup.sh)." >&2
+  echo "         Skipping matter-hub for this run." >&2
+  PROFILES="$(echo ",$PROFILES," | sed 's/,matter-hub,/,/g; s/^,//; s/,$//')"
+  export COMPOSE_PROFILES="$PROFILES"
 fi
 
 # ---------------------------------------------------------------------------
