@@ -288,21 +288,48 @@ PYEOF
   upsert_env_var "HAMH_HOME_ASSISTANT_ACCESS_TOKEN" "$LL_TOKEN" ".env"
   HA_ONBOARDED=1
   echo "Long-lived token persisted in .env."
+
+  # -------------------------------------------------------------------------
+  # Finish HA onboarding (steps 2-4) headlessly so that the UI doesn't try
+  # to resume the wizard on first login (which fails without a browser
+  # session). All four endpoints require Bearer auth except /users.
+  #   - core_config: empty body -> HA uses defaults; TZ comes from container env.
+  #   - analytics  : empty body -> opt-out by default.
+  #   - integration: requires client_id + redirect_uri; we don't use the
+  #                  returned auth_code, the call is just to flip the step
+  #                  to "done".
+  # -------------------------------------------------------------------------
+  echo "Finishing HA onboarding (core_config, analytics, integration) ..."
+  for step in core_config analytics; do
+    curl -fsS -o /dev/null -X POST "http://localhost:8123/api/onboarding/${step}" \
+      -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d '{}' \
+      || echo "WARNING: onboarding step '${step}' returned non-2xx (continuing)." >&2
+  done
+  INTEGRATION_BODY="$(python3 -c 'import json,sys; cid=sys.argv[1]; print(json.dumps({"client_id":cid,"redirect_uri":cid}))' "$CLIENT_ID")"
+  curl -fsS -o /dev/null -X POST "http://localhost:8123/api/onboarding/integration" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "$INTEGRATION_BODY" \
+    || echo "WARNING: onboarding step 'integration' returned non-2xx (continuing)." >&2
+  echo "HA onboarding completed."
 fi
 
 # ---------------------------------------------------------------------------
 # Stage 2: bring up matter-hub now that the token is in .env.
 # ---------------------------------------------------------------------------
-export COMPOSE_PROFILES="$FULL_PROFILES"
 if [ "$HA_ONBOARDED" -eq 1 ]; then
-  echo "----"
-  echo "Stage 2: docker compose up with profiles: '${COMPOSE_PROFILES:-<none>}'"
-  echo "----"
-  # Reload .env so docker compose sees HAMH_HOME_ASSISTANT_ACCESS_TOKEN.
+  # Reload .env so docker compose sees HAMH_HOME_ASSISTANT_ACCESS_TOKEN,
+  # then restore the reconciled COMPOSE_PROFILES (which sourcing .env clobbered).
   set -a
   # shellcheck disable=SC1091
   source ./.env
   set +a
+  export COMPOSE_PROFILES="$FULL_PROFILES"
+  echo "----"
+  echo "Stage 2: docker compose up with profiles: '${COMPOSE_PROFILES:-<none>}'"
+  echo "----"
   docker compose up -d
 fi
 
