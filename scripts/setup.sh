@@ -200,13 +200,25 @@ if echo ",${FULL_PROFILES}," | grep -q ",matter-hub,"; then
 
   echo "Waiting for Home Assistant API on http://localhost:8123 ..."
   HA_READY=0
-  for i in $(seq 1 36); do
+  for i in $(seq 1 18); do
     if curl -fs -o /dev/null "http://localhost:8123/api/onboarding"; then
       HA_READY=1
       break
     fi
-    echo "  Home Assistant hasn't responded yet — that's fine, it's still booting. Retrying in 5s... (${i}/36)"
-    sleep 5
+    JOKE_JSON="$(curl -fs --max-time 2 \
+      -H 'Accept: application/json' \
+      -A 'home-assistant-web3-build setup (https://github.com/PaTara43/home-assistant-web3-build)' \
+      'https://icanhazdadjoke.com/' 2>/dev/null || true)"
+    JOKE="$(printf '%s' "$JOKE_JSON" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("joke","").strip())
+except: pass' 2>/dev/null || true)"
+    if [ -n "$JOKE" ]; then
+      echo "  [${i}/18] HA still booting. Here's a dad joke while you wait:"
+      echo "         $JOKE"
+    else
+      echo "  [${i}/18] Home Assistant hasn't responded yet — that's fine, it's still booting. Retrying in 10s..."
+    fi
+    sleep 10
   done
   if [ "$HA_READY" -ne 1 ]; then
     echo "ERROR: Home Assistant did not come up within 180s." >&2
