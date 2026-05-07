@@ -74,6 +74,8 @@ services:
       - HAMH_HOME_ASSISTANT_ACCESS_TOKEN=${HAMH_HOME_ASSISTANT_ACCESS_TOKEN}
       - HAMH_HTTP_PORT=${HAMH_HTTP_PORT}
       - HAMH_LOG_LEVEL=${HAMH_LOG_LEVEL}
+      - HAMH_HTTP_AUTH_USERNAME=admin
+      - HAMH_HTTP_AUTH_PASSWORD=${HAMH_HTTP_AUTH_PASSWORD}
 
   music-assistant:
     container_name: music-assistant

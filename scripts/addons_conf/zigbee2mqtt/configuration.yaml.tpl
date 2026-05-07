@@ -18,6 +18,7 @@ advanced:
 
 frontend:
   port: 8099
+  auth_token: ${Z2M_AUTH_TOKEN}
 
 serial:
   port: /dev/ttyACM0

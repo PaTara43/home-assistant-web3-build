@@ -118,6 +118,16 @@ echo -n "$MOSQUITTO_PASSWORD" > ./mosquitto/raw.txt
 chmod 600 ./mosquitto/raw.txt
 export MOSQUITTO_PASSWORD
 
+# Single shared secret used as: HA admin password, matter-hub HTTP basic-auth
+# password (username 'admin' is hardcoded in compose.yaml), and zigbee2mqtt
+# frontend auth_token. Mosquitto's password is intentionally separate — it's
+# a service-to-service credential, not a UI password.
+MASTER_PASSWORD="$(openssl rand -hex 16)"
+HA_ADMIN_PASSWORD="$MASTER_PASSWORD"
+HAMH_HTTP_AUTH_PASSWORD="$MASTER_PASSWORD"
+Z2M_AUTH_TOKEN="$MASTER_PASSWORD"
+export Z2M_AUTH_TOKEN
+
 cp ./scripts/addons_conf/mosquitto/mosquitto.conf ./mosquitto/config/mosquitto.conf
 
 # Render zigbee2mqtt config from template using current env values.
@@ -166,6 +176,7 @@ fi
 # ---------------------------------------------------------------------------
 upsert_env_var "MOSQUITTO_PASSWORD" "$MOSQUITTO_PASSWORD" ".env"
 upsert_env_var "Z2MPATH" "$Z2MPATH" ".env"
+upsert_env_var "Z2M_AUTH_TOKEN" "$Z2M_AUTH_TOKEN" ".env"
 
 # ---------------------------------------------------------------------------
 # Stage 1: bring up the stack WITHOUT matter-hub (it needs an HA token first).
@@ -194,9 +205,10 @@ docker compose up -d
 # ---------------------------------------------------------------------------
 HA_ONBOARDED=0
 if echo ",${FULL_PROFILES}," | grep -q ",matter-hub,"; then
-  HA_ADMIN_PASSWORD="$(openssl rand -hex 16)"
   echo -n "$HA_ADMIN_PASSWORD" > ./homeassistant/raw.txt
   chmod 600 ./homeassistant/raw.txt
+  echo -n "$HAMH_HTTP_AUTH_PASSWORD" > ./matter-hub/raw.txt
+  chmod 600 ./matter-hub/raw.txt
 
   echo "Waiting for Home Assistant API on http://localhost:8123 ..."
   HA_READY=0
@@ -205,7 +217,7 @@ if echo ",${FULL_PROFILES}," | grep -q ",matter-hub,"; then
       HA_READY=1
       break
     fi
-    JOKE_JSON="$(curl -fs --max-time 2 \
+    JOKE_JSON="$(curl -fs --max-time 3 \
       -H 'Accept: application/json' \
       -A 'home-assistant-web3-build setup (https://github.com/PaTara43/home-assistant-web3-build)' \
       'https://icanhazdadjoke.com/' 2>/dev/null || true)"
@@ -285,6 +297,7 @@ PYEOF
   fi
 
   upsert_env_var "HA_ADMIN_PASSWORD" "$HA_ADMIN_PASSWORD" ".env"
+  upsert_env_var "HAMH_HTTP_AUTH_PASSWORD" "$HAMH_HTTP_AUTH_PASSWORD" ".env"
   upsert_env_var "HAMH_HOME_ASSISTANT_ACCESS_TOKEN" "$LL_TOKEN" ".env"
   HA_ONBOARDED=1
   echo "Long-lived token persisted in .env."
@@ -341,15 +354,31 @@ echo "  Music Assistant: http://localhost:8095  (profile: music)"
 echo "  Matter Server  : ws://localhost:5580/ws (profile: matter)"
 echo "  Matter Hub     : http://localhost:${HAMH_HTTP_PORT:-8482} (profile: matter-hub)"
 echo ""
-if [ "$HA_ONBOARDED" -eq 1 ]; then
-  echo "============================================================"
-  echo " Home Assistant admin credentials (also stored in homeassistant/raw.txt):"
-  echo "   username: ${HA_ADMIN_USERNAME}"
-  echo "   password: ${HA_ADMIN_PASSWORD}"
-  echo " A long-lived access token for matter-hub was generated"
-  echo " and written to .env as HAMH_HOME_ASSISTANT_ACCESS_TOKEN."
-  echo " Do NOT delete the '${HA_ADMIN_USERNAME}' user — the token is bound to it."
-  echo "============================================================"
-fi
+echo "============================================================"
+echo " Generated credentials"
 echo ""
-echo "NOTE: .env now contains secrets (MOSQUITTO_PASSWORD, Z2MPATH, and possibly HA_ADMIN_PASSWORD / HAMH_HOME_ASSISTANT_ACCESS_TOKEN). Do NOT commit it."
+echo "  Master password (HA admin / matter-hub UI / z2m frontend token):"
+echo "    ${MASTER_PASSWORD}"
+echo ""
+if [ "$HA_ONBOARDED" -eq 1 ]; then
+  echo "  Home Assistant       http://localhost:8123"
+  echo "    user: ${HA_ADMIN_USERNAME}    pass: <master>    file: homeassistant/raw.txt"
+  echo ""
+  echo "  Matter Hub web UI    http://localhost:${HAMH_HTTP_PORT:-8482}"
+  echo "    user: admin    pass: <master>    file: matter-hub/raw.txt"
+  echo ""
+  echo "  Note: a long-lived HA token for matter-hub is in .env"
+  echo "        (HAMH_HOME_ASSISTANT_ACCESS_TOKEN). Do NOT delete the"
+  echo "        '${HA_ADMIN_USERNAME}' HA user — the token is bound to it."
+  echo ""
+fi
+if [ "$Z2MPATH" != "." ]; then
+  echo "  Zigbee2MQTT          http://localhost:8099/?token=<master>"
+  echo "    (single-token auth — paste master password as token, no user)"
+  echo ""
+fi
+echo "  Mosquitto MQTT       (separate, service-to-service)"
+echo "    user: connectivity    pass: ${MOSQUITTO_PASSWORD}    file: mosquitto/raw.txt"
+echo "============================================================"
+echo ""
+echo "NOTE: .env now contains secrets. Do NOT commit it."
