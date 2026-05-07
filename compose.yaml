@@ -61,6 +61,20 @@ services:
       # Unsupported as of now. Waiting for support
       #- MATTER_DCL_PRODUCTION_URL=https://on.main-net.trustasia.com
 
+  matter-hub:
+    container_name: matter-hub
+    image: ghcr.io/riddix/home-assistant-matter-hub:${MATTER_HUB_VERSION}
+    profiles: [matter-hub]
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./matter-hub/data:/data
+    environment:
+      - HAMH_HOME_ASSISTANT_URL=${HAMH_HOME_ASSISTANT_URL}
+      - HAMH_HOME_ASSISTANT_ACCESS_TOKEN=${HAMH_HOME_ASSISTANT_ACCESS_TOKEN}
+      - HAMH_HTTP_PORT=${HAMH_HTTP_PORT}
+      - HAMH_LOG_LEVEL=${HAMH_LOG_LEVEL}
+
   music-assistant:
     container_name: music-assistant
     image: ghcr.io/music-assistant/server:${MA_VERSION}

@@ -34,6 +34,7 @@ Z2M_CUR="$(get_running_image zigbee2mqtt)"
 HA_CUR="$(get_running_image homeassistant)"
 MQTT_CUR="$(get_running_image mosquitto)"
 MATTER_CUR="$(get_running_image matter-server)"
+MATTERHUB_CUR="$(get_running_image matter-hub)"
 MA_CUR="$(get_running_image music-assistant)"
 
 echo "Currently running images:"
@@ -41,6 +42,7 @@ echo "  zigbee2mqtt     : ${Z2M_CUR:-<not running>}"
 echo "  homeassistant   : ${HA_CUR:-<not running>}"
 echo "  mosquitto       : ${MQTT_CUR:-<not running>}"
 echo "  matter-server   : ${MATTER_CUR:-<not running>}"
+echo "  matter-hub      : ${MATTERHUB_CUR:-<not running>}"
 echo "  music-assistant : ${MA_CUR:-<not running>}"
 
 # ---------------------------------------------------------------------------
@@ -163,6 +165,22 @@ fi
 export COMPOSE_PROFILES="$PROFILES"
 
 # ---------------------------------------------------------------------------
+# matter-hub sanity: if profile is on but no access token, refuse to start it.
+# (Token is normally provisioned headlessly by setup.sh. If matter-hub was
+# added to COMPOSE_PROFILES manually after setup, the user must generate a
+# long-lived token in HA UI and put it in .env.)
+# ---------------------------------------------------------------------------
+if profiles_has "matter-hub"; then
+  if [ -z "${HAMH_HOME_ASSISTANT_ACCESS_TOKEN:-}" ]; then
+    echo "WARNING: 'matter-hub' is in COMPOSE_PROFILES but HAMH_HOME_ASSISTANT_ACCESS_TOKEN is empty." >&2
+    echo "         Generate a long-lived token in HA (Profile -> Security) and set it in .env," >&2
+    echo "         or remove 'matter-hub' from COMPOSE_PROFILES. Skipping matter-hub for this run." >&2
+    PROFILES="$(echo ",$PROFILES," | sed 's/,matter-hub,/,/g; s/^,//; s/,$//')"
+    export COMPOSE_PROFILES="$PROFILES"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Persist updated Z2MPATH back into .env
 # ---------------------------------------------------------------------------
 upsert_env_var "Z2MPATH" "$Z2MPATH" ".env"
@@ -190,10 +208,11 @@ cleanup_old() {
   docker image rm "$running" || true
 }
 
-cleanup_old "Mosquitto"       "$MQTT_CUR"   "eclipse-mosquitto:${MOSQUITTO_VERSION}"
-cleanup_old "Zigbee2MQTT"     "$Z2M_CUR"    "koenkk/zigbee2mqtt:${Z2M_VERSION}"
-cleanup_old "Home Assistant"  "$HA_CUR"     "ghcr.io/home-assistant/home-assistant:${HA_VERSION}"
-cleanup_old "Matter Server"   "$MATTER_CUR" "ghcr.io/matter-js/matterjs-server:${MATTER_VERSION}"
-cleanup_old "Music Assistant" "$MA_CUR"     "ghcr.io/music-assistant/server:${MA_VERSION}"
+cleanup_old "Mosquitto"       "$MQTT_CUR"      "eclipse-mosquitto:${MOSQUITTO_VERSION}"
+cleanup_old "Zigbee2MQTT"     "$Z2M_CUR"       "koenkk/zigbee2mqtt:${Z2M_VERSION}"
+cleanup_old "Home Assistant"  "$HA_CUR"        "ghcr.io/home-assistant/home-assistant:${HA_VERSION}"
+cleanup_old "Matter Server"   "$MATTER_CUR"    "ghcr.io/matter-js/matterjs-server:${MATTER_VERSION}"
+cleanup_old "Matter Hub"      "$MATTERHUB_CUR" "ghcr.io/riddix/home-assistant-matter-hub:${MATTER_HUB_VERSION}"
+cleanup_old "Music Assistant" "$MA_CUR"        "ghcr.io/music-assistant/server:${MA_VERSION}"
 
 echo "Done."

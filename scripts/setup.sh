@@ -55,7 +55,7 @@ if [ ! -f .env ]; then
 fi
 
 # Refuse to run on a non-clean install.
-for d in homeassistant mosquitto zigbee2mqtt matter-server music-assistant; do
+for d in homeassistant mosquitto zigbee2mqtt matter-server matter-hub music-assistant; do
   if [ -e "./$d" ]; then
     echo "ERROR: ./$d already exists. setup.sh expects a clean install." >&2
     echo "       To reset, run: bash scripts/stop.sh && rm -rf homeassistant mosquitto zigbee2mqtt matter-server music-assistant && git checkout -- .env" >&2
@@ -154,6 +154,9 @@ export COMPOSE_PROFILES="$PROFILES"
 if profiles_has "matter"; then
   mkdir -p matter-server/data
 fi
+if profiles_has "matter-hub"; then
+  mkdir -p matter-hub/data
+fi
 if profiles_has "music"; then
   mkdir -p music-assistant/data
 fi
@@ -165,13 +168,128 @@ upsert_env_var "MOSQUITTO_PASSWORD" "$MOSQUITTO_PASSWORD" ".env"
 upsert_env_var "Z2MPATH" "$Z2MPATH" ".env"
 
 # ---------------------------------------------------------------------------
-# Start
+# Stage 1: bring up the stack WITHOUT matter-hub (it needs an HA token first).
 # ---------------------------------------------------------------------------
-echo "----"
-echo "Starting docker compose with profiles: '${COMPOSE_PROFILES:-<none>}'"
-echo "----"
+FULL_PROFILES="$COMPOSE_PROFILES"
+STAGE1_PROFILES="$(echo ",${COMPOSE_PROFILES}," | sed 's/,matter-hub,/,/g; s/^,//; s/,$//')"
+export COMPOSE_PROFILES="$STAGE1_PROFILES"
 
+echo "----"
+echo "Stage 1: docker compose up with profiles: '${COMPOSE_PROFILES:-<none>}'"
+echo "----"
 docker compose up -d
+
+# ---------------------------------------------------------------------------
+# Headless HA onboarding (only when matter-hub is enabled).
+#
+# Flow:
+#   1. Wait for /api/onboarding to respond.
+#   2. POST /api/onboarding/users  -> auth_code (creates the first HA user).
+#   3. POST /auth/token            -> short-lived access_token.
+#   4. WebSocket auth/long_lived_access_token -> token for matter-hub.
+#   5. Persist token in .env, then bring matter-hub up.
+#
+# Steps 2/3/4 of HA's onboarding wizard (location, analytics, finish) are left
+# for the user to complete in the UI on first login.
+# ---------------------------------------------------------------------------
+HA_ONBOARDED=0
+if echo ",${FULL_PROFILES}," | grep -q ",matter-hub,"; then
+  HA_ADMIN_PASSWORD="$(openssl rand -hex 16)"
+  echo -n "$HA_ADMIN_PASSWORD" > ./homeassistant/raw.txt
+  chmod 600 ./homeassistant/raw.txt
+
+  echo "Waiting for Home Assistant API on http://localhost:8123 ..."
+  for i in $(seq 1 90); do
+    if curl -fsS -o /dev/null "http://localhost:8123/api/onboarding"; then
+      break
+    fi
+    sleep 2
+    if [ "$i" -eq 90 ]; then
+      echo "ERROR: Home Assistant did not come up within 180s." >&2
+      exit 1
+    fi
+  done
+  echo "Home Assistant is responding."
+
+  CLIENT_ID="http://localhost:8123/"
+
+  echo "Creating first HA user '${HA_ADMIN_USERNAME}' via /api/onboarding/users ..."
+  ONBOARD_BODY="$(python3 -c 'import json,sys; cid,name,user,pwd,lang=sys.argv[1:6]; print(json.dumps({"client_id":cid,"name":name,"username":user,"password":pwd,"language":lang}))' \
+    "$CLIENT_ID" "Admin" "$HA_ADMIN_USERNAME" "$HA_ADMIN_PASSWORD" "$HA_ADMIN_LANGUAGE")"
+  ONBOARD_RESP="$(curl -fsS -X POST "http://localhost:8123/api/onboarding/users" \
+    -H "Content-Type: application/json" \
+    -d "$ONBOARD_BODY")"
+  AUTH_CODE="$(printf '%s' "$ONBOARD_RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["auth_code"])')"
+  if [ -z "$AUTH_CODE" ]; then
+    echo "ERROR: failed to obtain auth_code from onboarding. Response: $ONBOARD_RESP" >&2
+    exit 1
+  fi
+
+  echo "Exchanging auth_code for access token ..."
+  TOKEN_RESP="$(curl -fsS -X POST "http://localhost:8123/auth/token" \
+    --data-urlencode "client_id=${CLIENT_ID}" \
+    --data-urlencode "grant_type=authorization_code" \
+    --data-urlencode "code=${AUTH_CODE}")"
+  ACCESS_TOKEN="$(printf '%s' "$TOKEN_RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+  if [ -z "$ACCESS_TOKEN" ]; then
+    echo "ERROR: failed to obtain access_token. Response: $TOKEN_RESP" >&2
+    exit 1
+  fi
+
+  echo "Requesting long-lived access token for matter-hub ..."
+  LL_TOKEN="$(docker compose exec -T homeassistant python3 - "$ACCESS_TOKEN" <<'PYEOF'
+import asyncio, sys, aiohttp
+
+async def main():
+    token = sys.argv[1]
+    async with aiohttp.ClientSession() as s:
+        async with s.ws_connect("http://localhost:8123/api/websocket") as ws:
+            await ws.receive_json()  # auth_required
+            await ws.send_json({"type": "auth", "access_token": token})
+            msg = await ws.receive_json()
+            if msg.get("type") != "auth_ok":
+                raise SystemExit(f"auth failed: {msg}")
+            await ws.send_json({
+                "id": 1,
+                "type": "auth/long_lived_access_token",
+                "client_name": "matter-hub",
+                "lifespan": 3650,
+            })
+            resp = await ws.receive_json()
+            if not resp.get("success"):
+                raise SystemExit(f"token creation failed: {resp}")
+            print(resp["result"])
+
+asyncio.run(main())
+PYEOF
+)"
+  LL_TOKEN="$(printf '%s' "$LL_TOKEN" | tr -d '\r\n')"
+  if [ -z "$LL_TOKEN" ]; then
+    echo "ERROR: long-lived token came back empty." >&2
+    exit 1
+  fi
+
+  upsert_env_var "HA_ADMIN_PASSWORD" "$HA_ADMIN_PASSWORD" ".env"
+  upsert_env_var "HAMH_HOME_ASSISTANT_ACCESS_TOKEN" "$LL_TOKEN" ".env"
+  HA_ONBOARDED=1
+  echo "Long-lived token persisted in .env."
+fi
+
+# ---------------------------------------------------------------------------
+# Stage 2: bring up matter-hub now that the token is in .env.
+# ---------------------------------------------------------------------------
+export COMPOSE_PROFILES="$FULL_PROFILES"
+if [ "$HA_ONBOARDED" -eq 1 ]; then
+  echo "----"
+  echo "Stage 2: docker compose up with profiles: '${COMPOSE_PROFILES:-<none>}'"
+  echo "----"
+  # Reload .env so docker compose sees HAMH_HOME_ASSISTANT_ACCESS_TOKEN.
+  set -a
+  # shellcheck disable=SC1091
+  source ./.env
+  set +a
+  docker compose up -d
+fi
 
 echo ""
 echo "Done. Service URLs (when respective profiles are enabled):"
@@ -179,5 +297,17 @@ echo "  Home Assistant : http://localhost:8123"
 echo "  Zigbee2MQTT    : http://localhost:8099  (profile: z2m)"
 echo "  Music Assistant: http://localhost:8095  (profile: music)"
 echo "  Matter Server  : ws://localhost:5580/ws (profile: matter)"
+echo "  Matter Hub     : http://localhost:${HAMH_HTTP_PORT:-8482} (profile: matter-hub)"
 echo ""
-echo "NOTE: .env now contains MOSQUITTO_PASSWORD and Z2MPATH. Do NOT commit it."
+if [ "$HA_ONBOARDED" -eq 1 ]; then
+  echo "============================================================"
+  echo " Home Assistant admin credentials (also stored in homeassistant/raw.txt):"
+  echo "   username: ${HA_ADMIN_USERNAME}"
+  echo "   password: ${HA_ADMIN_PASSWORD}"
+  echo " A long-lived access token for matter-hub was generated"
+  echo " and written to .env as HAMH_HOME_ASSISTANT_ACCESS_TOKEN."
+  echo " Do NOT delete the '${HA_ADMIN_USERNAME}' user — the token is bound to it."
+  echo "============================================================"
+fi
+echo ""
+echo "NOTE: .env now contains secrets (MOSQUITTO_PASSWORD, Z2MPATH, and possibly HA_ADMIN_PASSWORD / HAMH_HOME_ASSISTANT_ACCESS_TOKEN). Do NOT commit it."
