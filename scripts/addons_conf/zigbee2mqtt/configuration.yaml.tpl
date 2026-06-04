@@ -14,7 +14,11 @@ mqtt:
 
 advanced:
   channel: ${ZIGBEE_CHANNEL}
+  pan_id: GENERATE
+  ext_pan_id: GENERATE
+  network_key: GENERATE
   last_seen: 'ISO_8601'
+  log_level: warn
 
 frontend:
   port: 8099
