@@ -135,6 +135,6 @@ Apache-2.0
 
 ## Related tools
 
-### Music Assistant Bluetooth Bridge
+### Music Assistant + Bluetooth Bridge
 
-[music-assistant-bt-bridge](https://github.com/PaTara43/music-assistant-bt-bridge) — streams audio from Music Assistant to Bluetooth speakers on the same host. Useful when running Music Assistant separately from this stack.
+[music-assistant-bt-bridge](https://github.com/PaTara43/music-assistant-bt-bridge) — Software stack to play Music On BT devices connected to Home Assistant with Music Assistant. 
