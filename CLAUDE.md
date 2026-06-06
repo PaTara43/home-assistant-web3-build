@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A Docker Compose stack for a self-hosted smart home: Home Assistant + Mosquitto, plus optional Zigbee2MQTT, matter.js Server, and Music Assistant. The repo ships only the orchestration: `compose.yaml`, `.env`, and shell scripts under `scripts/`. All runtime state (HA config, MQTT data, Z2M data, etc.) lives in directories that are **created by the scripts and gitignored** — they don't exist in a fresh checkout.
+A Docker Compose stack for a self-hosted smart home: Home Assistant + Mosquitto, plus optional Zigbee2MQTT, matter.js Server, and Home Assistant Matter Hub. The repo ships only the orchestration: `compose.yaml`, `.env`, and shell scripts under `scripts/`. All runtime state (HA config, MQTT data, Z2M data, etc.) lives in directories that are **created by the scripts and gitignored** — they don't exist in a fresh checkout.
 
 ## Common commands
 
@@ -26,7 +26,7 @@ There are no tests, no linter config, no build step. Shell scripts use `set -euo
 
 **Two-file env split.** `.env` (gitignored values like `MOSQUITTO_PASSWORD`, `Z2MPATH`, plus user-tunable things like `TZ`, `ZIGBEE_CHANNEL`, `COMPOSE_PROFILES`) and `scripts/packages.env` (pinned image tags and add-on versions). Both are sourced by every script via `set -a; source ...; set +a`. `compose.yaml` references variables from both files; nothing in compose is `:latest`.
 
-**Optional services are profiles, not separate compose files.** `z2m`, `matter`, `matter-hub`, `music`. The `z2m` profile is **auto-managed by setup.sh and update.sh** based on whether a Zigbee coordinator is detected under `/dev/serial/by-id/` — they edit `COMPOSE_PROFILES` in `.env` accordingly. Don't hand-edit the `z2m` entry; let the scripts reconcile it. Other profiles are user-controlled.
+**Optional services are profiles, not separate compose files.** `z2m`, `matter`, `matter-hub`. The `z2m` profile is **auto-managed by setup.sh and update.sh** based on whether a Zigbee coordinator is detected under `/dev/serial/by-id/` — they edit `COMPOSE_PROFILES` in `.env` accordingly. Don't hand-edit the `z2m` entry; let the scripts reconcile it. Other profiles are user-controlled.
 
 **`matter` vs `matter-hub` are different directions.** `matter` is matter.js Server — Matter controller, brings external Matter devices **into** HA. `matter-hub` is home-assistant-matter-hub — bridges HA entities **out** as Matter devices for Apple/Google/Alexa. They're independent; you can run either, both, or neither.
 
@@ -35,7 +35,7 @@ There are no tests, no linter config, no build step. Shell scripts use `set -euo
 
 **Single master password.** `setup.sh` generates ONE 16-byte hex value and reuses it as `HA_ADMIN_PASSWORD` (HA admin login), `HAMH_HTTP_AUTH_PASSWORD` (matter-hub web UI basic auth, username `admin` is hardcoded in compose.yaml), and `Z2M_AUTH_TOKEN` (zigbee2mqtt frontend `auth_token`). The Mosquitto password is intentionally separate — that one is a service-to-service credential, not a UI password.
 
-**`setup.sh` is for clean installs only.** It refuses to run if any of `homeassistant/`, `mosquitto/`, `zigbee2mqtt/`, `matter-server/`, `music-assistant/` already exist. For an existing stack, use `update.sh`. Reset = `stop.sh` + `rm -rf` those dirs + `git checkout -- .env` + `setup.sh`.
+**`setup.sh` is for clean installs only.** It refuses to run if any of `homeassistant/`, `mosquitto/`, `zigbee2mqtt/`, `matter-server/`, `matter-hub/` already exist. For an existing stack, use `update.sh`. Reset = `stop.sh` + `rm -rf` those dirs + `git checkout -- .env` + `setup.sh`.
 
 **Volumes are operator-owned after first install.** `update.sh` does **not** regenerate config files in volumes (`mosquitto/config/mosquitto.conf`, `zigbee2mqtt/data/configuration.yaml`, HA's `.storage/*`). These are templated only on the initial `setup.sh` from `scripts/addons_conf/{mosquitto,zigbee2mqtt,ha_integrations}/` via `envsubst`. If you change a template, it won't propagate to a running install — say so explicitly.
 
@@ -47,7 +47,7 @@ There are no tests, no linter config, no build step. Shell scripts use `set -euo
 
 **`upsert_env_var`** (defined in both `setup.sh` and `update.sh`) is the only sanctioned way to mutate `.env` from a script — it preserves the rest of the file. Use it; don't append blindly.
 
-**Networking.** `homeassistant`, `zigbee2mqtt`, `matter-server`, `music-assistant` all run with `network_mode: host` (required for discovery / Bluetooth / Matter / mDNS). Only `mosquitto` publishes a port. HA runs `privileged: true` for USB/Bluetooth access.
+**Networking.** `homeassistant`, `zigbee2mqtt`, `matter-server`, `matter-hub` all run with `network_mode: host` (required for discovery / Bluetooth / Matter / mDNS). Only `mosquitto` publishes a port. HA runs `privileged: true` for USB/Bluetooth access.
 
 ## Editing rules specific to this repo
 

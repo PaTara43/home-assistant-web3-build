@@ -35,7 +35,6 @@ HA_CUR="$(get_running_image homeassistant)"
 MQTT_CUR="$(get_running_image mosquitto)"
 MATTER_CUR="$(get_running_image matter-server)"
 MATTERHUB_CUR="$(get_running_image matter-hub)"
-MA_CUR="$(get_running_image music-assistant)"
 
 echo "Currently running images:"
 echo "  zigbee2mqtt     : ${Z2M_CUR:-<not running>}"
@@ -43,7 +42,6 @@ echo "  homeassistant   : ${HA_CUR:-<not running>}"
 echo "  mosquitto       : ${MQTT_CUR:-<not running>}"
 echo "  matter-server   : ${MATTER_CUR:-<not running>}"
 echo "  matter-hub      : ${MATTERHUB_CUR:-<not running>}"
-echo "  music-assistant : ${MA_CUR:-<not running>}"
 
 # ---------------------------------------------------------------------------
 # Load env
@@ -211,6 +209,5 @@ cleanup_old "Zigbee2MQTT"     "$Z2M_CUR"       "koenkk/zigbee2mqtt:${Z2M_VERSION
 cleanup_old "Home Assistant"  "$HA_CUR"        "ghcr.io/home-assistant/home-assistant:${HA_VERSION}"
 cleanup_old "Matter Server"   "$MATTER_CUR"    "ghcr.io/matter-js/matterjs-server:${MATTER_VERSION}"
 cleanup_old "Matter Hub"      "$MATTERHUB_CUR" "ghcr.io/riddix/home-assistant-matter-hub:${MATTER_HUB_VERSION}"
-cleanup_old "Music Assistant" "$MA_CUR"        "ghcr.io/music-assistant/server:${MA_VERSION}"
 
 echo "Done."

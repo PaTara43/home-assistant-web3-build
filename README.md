@@ -7,7 +7,6 @@ Docker Compose stack for a self-hosted smart home, opinionated and pinned:
 - **Zigbee2MQTT** *(optional)* — auto-enabled when a Zigbee coordinator is attached
 - **matter.js Server** *(optional)* — Matter controller, brings devices **into** HA
 - **Home Assistant Matter Hub** *(optional)* — exports HA entities **out** as Matter devices (Apple/Google/Alexa)
-- **Music Assistant Server** *(optional)* — multi-room media server
 
 All image versions are pinned in `scripts/packages.env`. Custom themes, integrations, and Lovelace cards are installed by separate scripts under `scripts/`, also pinned to specific releases.
 
@@ -29,7 +28,7 @@ Edit `.env`. Defaults are sane for most setups:
 - `TZ` — IANA time zone (e.g. `Europe/Moscow`).
 - `ZIGBEE_CHANNEL` — 11–26. Channels 11/15/20/25 are typically least congested.
 - `ZIGBEE_ADAPTER` — adapter type (`ember` for Sonoff ZBDongle-E, `zstack` for ZBDongle-P, see `.env` comments for the rest).
-- `COMPOSE_PROFILES` — comma-separated optional profiles: `matter`, `matter-hub`, `music`, `z2m` (auto-added if a coordinator is detected). Leave empty for HA + Mosquitto only.
+- `COMPOSE_PROFILES` — comma-separated optional profiles: `matter`, `matter-hub`, `z2m` (auto-added if a coordinator is detected). Leave empty for HA + Mosquitto only.
 
 Pinned image and add-on versions live in `scripts/packages.env`. Touch only if you know what you're doing.
 
@@ -41,7 +40,7 @@ All scripts live under `scripts/` and `cd` to the repo root themselves, so absol
 
 ### `setup.sh` — initial install
 
-**Run once on a clean Ubuntu host.** The script refuses to run if any of `homeassistant/`, `mosquitto/`, `zigbee2mqtt/`, `matter-server/`, `matter-hub/`, `music-assistant/` already exist (use `update.sh` for an existing stack, or [reset](#reset-start-over)).
+**Run once on a clean Ubuntu host.** The script refuses to run if any of `homeassistant/`, `mosquitto/`, `zigbee2mqtt/`, `matter-server/`, `matter-hub/` already exist (use `update.sh` for an existing stack, or [reset](#reset-start-over)).
 
 What it does:
 
@@ -96,7 +95,6 @@ The full list of installed themes / integrations / cards is in `scripts/packages
 |------------------|------------------------------------------------|--------------|
 | Home Assistant   | http://localhost:8123                          | always on    |
 | Zigbee2MQTT      | http://localhost:8099/?token=<master-password> | `z2m`        |
-| Music Assistant  | http://localhost:8095                          | `music`      |
 | Matter Server WS | ws://localhost:5580/ws                         | `matter`     |
 | Matter Hub       | http://localhost:8482                          | `matter-hub` |
 
@@ -122,15 +120,11 @@ The HA long-lived access token is **always** minted by `setup.sh` (regardless of
 
 Matter requires IPv6 + UDP + mDNS end-to-end. On VLAN'd networks or hosts without Docker IPv6, expect commissioning failures — see the [project's troubleshooting docs](https://riddix.github.io/home-assistant-matter-hub/guides/connectivity-issues).
 
-### Music Assistant
-
-Host networking for mDNS player discovery, `SYS_ADMIN` + `DAC_READ_SEARCH` for SMB mounts, ports `8095` (UI), `8097` (audio), `3483` (slimproto). To expose a local music library, uncomment the `/media` bind in `compose.yaml`.
-
 ## Reset (start over)
 
 ```sh
 bash scripts/stop.sh
-rm -rf homeassistant/ mosquitto/ zigbee2mqtt/ matter-server/ matter-hub/ music-assistant/
+rm -rf homeassistant/ mosquitto/ zigbee2mqtt/ matter-server/ matter-hub/
 git checkout -- .env
 bash scripts/setup.sh
 ```
@@ -138,3 +132,9 @@ bash scripts/setup.sh
 ## License
 
 Apache-2.0
+
+## Related tools
+
+### Music Assistant Bluetooth Bridge
+
+[music-assistant-bt-bridge](https://github.com/PaTara43/music-assistant-bt-bridge) — streams audio from Music Assistant to Bluetooth speakers on the same host. Useful when running Music Assistant separately from this stack.

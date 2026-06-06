@@ -14,6 +14,6 @@ if [ -f .env ]; then
   set +a
 fi
 # Stop everything regardless of which profiles are active.
-docker compose --profile z2m --profile matter --profile matter-hub --profile music down
+docker compose --profile z2m --profile matter --profile matter-hub down
 
 echo "Stack stopped."

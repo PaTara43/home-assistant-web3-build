@@ -3,7 +3,7 @@
 /mosquitto/
 /zigbee2mqtt/
 /matter-server/
-/music-assistant/
+/matter-hub/
 
 # Local backups produced by sed -i.bak
 *.bak

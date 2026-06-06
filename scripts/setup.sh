@@ -55,10 +55,10 @@ if [ ! -f .env ]; then
 fi
 
 # Refuse to run on a non-clean install.
-for d in homeassistant mosquitto zigbee2mqtt matter-server matter-hub music-assistant; do
+for d in homeassistant mosquitto zigbee2mqtt matter-server matter-hub; do
   if [ -e "./$d" ]; then
     echo "ERROR: ./$d already exists. setup.sh expects a clean install." >&2
-    echo "       To reset, run: bash scripts/stop.sh && rm -rf homeassistant mosquitto zigbee2mqtt matter-server music-assistant && git checkout -- .env" >&2
+    echo "       To reset, run: bash scripts/stop.sh && rm -rf homeassistant mosquitto zigbee2mqtt matter-server matter-hub && git checkout -- .env" >&2
     echo "       To update an existing stack instead, run: bash scripts/update.sh" >&2
     exit 1
   fi
@@ -167,10 +167,6 @@ fi
 if profiles_has "matter-hub"; then
   mkdir -p matter-hub/data
 fi
-if profiles_has "music"; then
-  mkdir -p music-assistant/data
-fi
-
 # ---------------------------------------------------------------------------
 # Persist runtime values into .env
 # ---------------------------------------------------------------------------
@@ -351,7 +347,6 @@ echo ""
 echo "Done. Service URLs (when respective profiles are enabled):"
 echo "  Home Assistant : http://localhost:8123"
 echo "  Zigbee2MQTT    : http://localhost:8099  (profile: z2m)"
-echo "  Music Assistant: http://localhost:8095  (profile: music)"
 echo "  Matter Server  : ws://localhost:5580/ws (profile: matter)"
 echo "  Matter Hub     : http://localhost:8482  (profile: matter-hub)"
 echo ""
