@@ -24,7 +24,7 @@ There are no tests, no linter config, no build step. Shell scripts use `set -euo
 
 ## Architecture and conventions
 
-**Two-file env split.** `.env` (gitignored values like `MOSQUITTO_PASSWORD`, `Z2MPATH`, plus user-tunable things like `TZ`, `ZIGBEE_CHANNEL`, `COMPOSE_PROFILES`) and `scripts/packages.env` (pinned image tags and add-on versions). Both are sourced by every script via `set -a; source ...; set +a`. `compose.yaml` references variables from both files; nothing in compose is `:latest`.
+**Two-file env split.** `template.env` (tracked defaults-only template; copy to `.env` and edit — `.env` is gitignored and holds user-tunable things like `TZ`, `ZIGBEE_CHANNEL`, `COMPOSE_PROFILES` plus generated secrets like `MOSQUITTO_PASSWORD`, `Z2MPATH`) and `scripts/packages.env` (pinned image tags and add-on versions). Both are sourced by every script via `set -a; source ...; set +a`. `compose.yaml` references variables from both files; nothing in compose is `:latest`.
 
 **Optional services are profiles, not separate compose files.** `z2m`, `matter`, `matter-hub`. The `z2m` profile is **auto-managed by setup.sh and update.sh** — they edit `COMPOSE_PROFILES` in `.env` accordingly. Don't hand-edit the `z2m` entry; let the scripts reconcile it. Other profiles are user-controlled.
 
@@ -37,7 +37,7 @@ There are no tests, no linter config, no build step. Shell scripts use `set -euo
 
 **Single master password.** `setup.sh` generates ONE 16-byte hex value and reuses it as `HA_ADMIN_PASSWORD` (HA admin login), `HAMH_HTTP_AUTH_PASSWORD` (matter-hub web UI basic auth, username `admin` is hardcoded in compose.yaml), and `Z2M_AUTH_TOKEN` (zigbee2mqtt frontend `auth_token`). The Mosquitto password is intentionally separate — that one is a service-to-service credential, not a UI password.
 
-**`setup.sh` is for clean installs only.** It refuses to run if any of `homeassistant/`, `mosquitto/`, `zigbee2mqtt/`, `matter-server/`, `matter-hub/` already exist. For an existing stack, use `update.sh`. Reset = `stop.sh` + `rm -rf` those dirs + `git checkout -- .env` + `setup.sh`.
+**`setup.sh` is for clean installs only.** It refuses to run if any of `homeassistant/`, `mosquitto/`, `zigbee2mqtt/`, `matter-server/`, `matter-hub/` already exist. For an existing stack, use `update.sh`. Reset = `stop.sh` + `rm -rf` those dirs + `rm -f .env` + `cp template.env .env` + `setup.sh`.
 
 **Volumes are operator-owned after first install.** `update.sh` does **not** regenerate config files in volumes (`mosquitto/config/mosquitto.conf`, `zigbee2mqtt/data/configuration.yaml`, HA's `.storage/*`). These are templated only on the initial `setup.sh` from `scripts/addons_conf/{mosquitto,zigbee2mqtt,ha_integrations}/` via `envsubst`. If you change a template, it won't propagate to a running install — say so explicitly.
 
@@ -53,7 +53,7 @@ There are no tests, no linter config, no build step. Shell scripts use `set -euo
 
 ## Editing rules specific to this repo
 
-- Never commit `.env` after `setup.sh` (it then contains the generated MQTT password and resolved `Z2MPATH`). The shipped `.env` is the defaults-only template.
+- Never commit `.env` — it's gitignored and holds generated secrets after `setup.sh`. The tracked template is `template.env`.
 - Never pin to `:latest` in `compose.yaml` or in any installer script — versions go in `scripts/packages.env`.
 - Scripts must remain idempotent and runnable from any CWD. Keep the `SCRIPT_DIR` / `cd "$REPO_ROOT"` preamble.
 - HA YAML uses the modern syntax (`triggers:` / `actions:` / `action:` inside actions, modern `template:` format). Current HA series pinned: see `HA_VERSION` in `scripts/packages.env`.

@@ -50,7 +50,8 @@ fi
 echo "envsubst found."
 
 if [ ! -f .env ]; then
-  echo "ERROR: .env file not found in repo root. It should be tracked by the repo." >&2
+  echo "ERROR: .env not found in repo root. Copy template.env to .env first:" >&2
+  echo "  cp template.env .env" >&2
   exit 1
 fi
 
@@ -58,7 +59,7 @@ fi
 for d in homeassistant mosquitto zigbee2mqtt matter-server matter-hub; do
   if [ -e "./$d" ]; then
     echo "ERROR: ./$d already exists. setup.sh expects a clean install." >&2
-    echo "       To reset, run: bash scripts/stop.sh && rm -rf homeassistant mosquitto zigbee2mqtt matter-server matter-hub && git checkout -- .env" >&2
+    echo "       To reset, run: bash scripts/stop.sh && rm -rf homeassistant mosquitto zigbee2mqtt matter-server matter-hub && rm -f .env && cp template.env .env && bash scripts/setup.sh" >&2
     echo "       To update an existing stack instead, run: bash scripts/update.sh" >&2
     exit 1
   fi

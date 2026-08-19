@@ -23,15 +23,15 @@ bash scripts/install-cards.sh               # stop HA first, run, then start HA
 
 ## Env: two files, both sourced every run
 
-- `.env` — tracked as a defaults-only template; user-tunable (`TZ`, `ZIGBEE_CHANNEL`, `ZIGBEE_ADAPTER`, `COMPOSE_PROFILES`) + secret slots filled by `setup.sh`.
+- `template.env` — tracked defaults-only template; copy to `.env` (gitignored) and edit. User-tunable (`TZ`, `ZIGBEE_CHANNEL`, `ZIGBEE_ADAPTER`, `COMPOSE_PROFILES`) + secret slots filled by `setup.sh`.
 - `scripts/packages.env` — pinned image/add-on tags. **No `:latest` anywhere.** Bump a version here, then re-run the relevant script.
 
 Both loaded via `set -a; source ./.env; source ./scripts/packages.env; set +a`.
 
 ## Critical rules
 
-- **Never commit `.env` after `setup.sh`** — it then contains `MOSQUITTO_PASSWORD`, `Z2MPATH`, `HA_ADMIN_PASSWORD`, `HAMH_*` tokens. The shipped `.env` is the template only.
-- **`setup.sh` is clean-install only.** It aborts if any runtime dir exists. Reset = `bash scripts/stop.sh && rm -rf homeassistant mosquitto zigbee2mqtt matter-server matter-hub && git checkout -- .env && bash scripts/setup.sh`.
+- **`.env` is gitignored** — it contains `MOSQUITTO_PASSWORD`, `Z2MPATH`, `HA_ADMIN_PASSWORD`, `HAMH_*` tokens after `setup.sh`. Commit only `template.env`.
+- **`setup.sh` is clean-install only.** It aborts if any runtime dir exists. Reset = `bash scripts/stop.sh && rm -rf homeassistant mosquitto zigbee2mqtt matter-server matter-hub && rm -f .env && cp template.env .env && bash scripts/setup.sh`.
 - **Volumes are operator-owned.** `update.sh` does NOT regenerate configs in volumes (`mosquitto/config/mosquitto.conf`, `zigbee2mqtt/data/configuration.yaml`, HA `.storage/*`). They're rendered from `scripts/addons_conf/` via `envsubst` only on first `setup.sh`. Template edits don't propagate to running installs — say so explicitly to the user.
 - **`upsert_env_var`** (in `setup.sh` and `update.sh`) is the only sanctioned `.env` mutator — it preserves the rest of the file. Don't append blindly.
 - **Scripts must stay idempotent** and keep the `SCRIPT_DIR` / `cd "$REPO_ROOT"` preamble so they run from any CWD.

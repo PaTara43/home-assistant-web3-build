@@ -189,7 +189,7 @@ export COMPOSE_PROFILES="$PROFILES"
 # ---------------------------------------------------------------------------
 if profiles_has "matter-hub" && [ -z "${HAMH_HOME_ASSISTANT_ACCESS_TOKEN:-}" ]; then
   echo "WARNING: 'matter-hub' is in COMPOSE_PROFILES but HAMH_HOME_ASSISTANT_ACCESS_TOKEN is empty in .env." >&2
-  echo "         Restore it from a backup, or do a full reset (stop.sh + rm -rf data dirs + git checkout -- .env + setup.sh)." >&2
+  echo "         Restore it from a backup, or do a full reset (stop.sh + rm -rf data dirs + rm -f .env + cp template.env .env + setup.sh)." >&2
   echo "         Skipping matter-hub for this run." >&2
   PROFILES="$(echo ",$PROFILES," | sed 's/,matter-hub,/,/g; s/^,//; s/,$//')"
   export COMPOSE_PROFILES="$PROFILES"

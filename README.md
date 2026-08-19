@@ -21,6 +21,7 @@ All image versions are pinned in `scripts/packages.env`. Custom themes, integrat
 ```sh
 git clone https://github.com/PaTara43/home-assistant-web3-build
 cd home-assistant-web3-build
+cp template.env .env
 ```
 
 Edit `.env`. Defaults are sane for most setups:
@@ -33,7 +34,7 @@ Edit `.env`. Defaults are sane for most setups:
 
 Pinned image and add-on versions live in `scripts/packages.env`. Touch only if you know what you're doing.
 
-> ⚠️ **`setup.sh` will populate `.env` with generated secrets** (Mosquitto password, HA admin password, matter-hub HTTP password, HA long-lived token, resolved Z2MPATH). The shipped `.env` is the defaults-only template. **Do not commit `.env` after running setup.**
+> ⚠️ **`setup.sh` will populate `.env` (your copy) with generated secrets** (Mosquitto password, HA admin password, matter-hub HTTP password, HA long-lived token, resolved Z2MPATH). `.env` is gitignored; `template.env` is the tracked defaults-only template. **Do not commit `.env` after running setup.**
 
 ## Scripts
 
@@ -137,7 +138,8 @@ Matter requires IPv6 + UDP + mDNS end-to-end. On VLAN'd networks or hosts withou
 ```sh
 bash scripts/stop.sh
 rm -rf homeassistant/ mosquitto/ zigbee2mqtt/ matter-server/ matter-hub/
-git checkout -- .env
+rm -f .env
+cp template.env .env
 bash scripts/setup.sh
 ```
 
