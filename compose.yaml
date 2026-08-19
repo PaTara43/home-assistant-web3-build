@@ -28,8 +28,9 @@ services:
     environment:
       - TZ=${TZ}
     devices:
-      # Make sure this matches your adapter location.
-      - ${Z2MPATH}:/dev/ttyACM0
+      # USB: ${Z2MPATH}:/dev/ttyACM0 (auto-detected). TCP/PoE: /dev/null:/dev/null
+      # (coordinator is reached over the host network, no device to map).
+      - ${Z2M_DEVICE_MAP}
 
   homeassistant:
     container_name: homeassistant

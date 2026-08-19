@@ -76,36 +76,73 @@ source ./scripts/packages.env
 set +a
 
 # ---------------------------------------------------------------------------
-# Detect Zigbee coordinator
+# Detect / configure Zigbee coordinator
+#
+# Two transports are supported:
+#   usb (default) — auto-detected from /dev/serial/by-id/; device is mapped
+#                   into the container as /dev/ttyACM0.
+#   tcp           — PoE coordinators reached over the network (e.g. SMLight
+#                   SLZB-06 on tcp://<host>:6638). No USB device is mapped;
+#                   zigbee2mqtt reaches the coordinator via host networking.
 # ---------------------------------------------------------------------------
-if [ -d /dev/serial/by-id/ ] && [ -n "$(ls -A /dev/serial/by-id/ 2>/dev/null)" ]; then
-  echo "Zigbee coordinator candidates found in /dev/serial/by-id/"
-  NUMB=$(ls -1q /dev/serial/by-id/ | wc -l)
-  if (( NUMB > 1 )); then
-    echo "More than 1 connected serial device. Please choose your Zigbee coordinator:"
-    select f in /dev/serial/by-id/*; do
-      [ -n "$f" ] && break
-      echo ">>> Invalid selection"
-    done
-    echo "Selected: $f"
-    Z2MPATH="$f"
-  else
-    Z2MPATH="/dev/serial/by-id/$(ls /dev/serial/by-id/)"
+if [ "${Z2M_TRANSPORT:-usb}" = "tcp" ]; then
+  echo "Zigbee transport: tcp (PoE coordinator)"
+  : "${Z2M_TCP_PORT:=6638}"
+  if [ -z "${Z2M_TCP_HOST:-}" ]; then
+    read -r -p "Enter PoE coordinator host/IP (e.g. 192.168.1.42): " Z2M_TCP_HOST
+    if [ -z "$Z2M_TCP_HOST" ]; then
+      echo "ERROR: Z2M_TCP_HOST is required for Z2M_TRANSPORT=tcp." >&2
+      exit 1
+    fi
   fi
+  if [ -z "${Z2M_BAUDRATE:-}" ]; then
+    echo "WARNING: Z2M_BAUDRATE is empty. Most PoE coordinators need a baudrate"
+    echo "         (SLZB-06 -> 115200). Set it in .env or edit zigbee2mqtt/data/configuration.yaml later." >&2
+  fi
+  Z2M_SERIAL_PORT="tcp://${Z2M_TCP_HOST}:${Z2M_TCP_PORT}"
+  Z2M_DEVICE_MAP="/dev/null:/dev/null"
+  # Reuse Z2MPATH as the "z2m is enabled" marker (non-"." value).
+  Z2MPATH="$Z2M_SERIAL_PORT"
 else
-  echo "No Zigbee coordinator found in /dev/serial/by-id/."
-  while true; do
-    read -r -p "Continue without Zigbee2MQTT? (Y/n) " yn
-    case "$yn" in
-      [yY]|"") echo "OK, continuing without Z2M."; Z2MPATH="."; break ;;
-      [nN]) echo "Exiting..."; exit 1 ;;
-      *) echo "Invalid response" ;;
-    esac
-  done
+  echo "Zigbee transport: usb"
+  if [ -d /dev/serial/by-id/ ] && [ -n "$(ls -A /dev/serial/by-id/ 2>/dev/null)" ]; then
+    echo "Zigbee coordinator candidates found in /dev/serial/by-id/"
+    NUMB=$(ls -1q /dev/serial/by-id/ | wc -l)
+    if (( NUMB > 1 )); then
+      echo "More than 1 connected serial device. Please choose your Zigbee coordinator:"
+      select f in /dev/serial/by-id/*; do
+        [ -n "$f" ] && break
+        echo ">>> Invalid selection"
+      done
+      echo "Selected: $f"
+      Z2MPATH="$f"
+    else
+      Z2MPATH="/dev/serial/by-id/$(ls /dev/serial/by-id/)"
+    fi
+  else
+    echo "No Zigbee coordinator found in /dev/serial/by-id/."
+    while true; do
+      read -r -p "Continue without Zigbee2MQTT? (Y/n) " yn
+      case "$yn" in
+        [yY]|"") echo "OK, continuing without Z2M."; Z2MPATH="."; break ;;
+        [nN]) echo "Exiting..."; exit 1 ;;
+        *) echo "Invalid response" ;;
+      esac
+    done
+  fi
+  if [ "$Z2MPATH" != "." ]; then
+    Z2M_SERIAL_PORT="/dev/ttyACM0"
+    Z2M_DEVICE_MAP="${Z2MPATH}:/dev/ttyACM0"
+  else
+    Z2M_SERIAL_PORT=""
+    Z2M_DEVICE_MAP="/dev/null:/dev/null"
+  fi
 fi
 
-export Z2MPATH
+export Z2MPATH Z2M_SERIAL_PORT Z2M_DEVICE_MAP
 echo "Z2MPATH=$Z2MPATH"
+echo "Z2M_SERIAL_PORT=$Z2M_SERIAL_PORT"
+echo "Z2M_DEVICE_MAP=$Z2M_DEVICE_MAP"
 
 # ---------------------------------------------------------------------------
 # Mosquitto + z2m: directories, config, password
@@ -130,8 +167,14 @@ export Z2M_AUTH_TOKEN
 
 cp ./scripts/addons_conf/mosquitto/mosquitto.conf ./mosquitto/config/mosquitto.conf
 
-# Render zigbee2mqtt config from template using current env values.
-envsubst < ./scripts/addons_conf/zigbee2mqtt/configuration.yaml.tpl \
+# Render zigbee2mqtt config from the template matching the transport.
+if [ "$Z2M_TRANSPORT" = "tcp" ]; then
+  Z2M_TPL="configuration.yaml.tcp.tpl"
+else
+  Z2M_TPL="configuration.yaml.usb.tpl"
+fi
+echo "Rendering zigbee2mqtt config from $Z2M_TPL"
+envsubst < "./scripts/addons_conf/zigbee2mqtt/$Z2M_TPL" \
   > ./zigbee2mqtt/data/configuration.yaml
 
 # ---------------------------------------------------------------------------
@@ -173,6 +216,12 @@ fi
 upsert_env_var "MOSQUITTO_PASSWORD" "$MOSQUITTO_PASSWORD" ".env"
 upsert_env_var "Z2MPATH" "$Z2MPATH" ".env"
 upsert_env_var "Z2M_AUTH_TOKEN" "$Z2M_AUTH_TOKEN" ".env"
+upsert_env_var "Z2M_TRANSPORT" "$Z2M_TRANSPORT" ".env"
+upsert_env_var "Z2M_TCP_HOST" "${Z2M_TCP_HOST:-}" ".env"
+upsert_env_var "Z2M_TCP_PORT" "${Z2M_TCP_PORT:-6638}" ".env"
+upsert_env_var "Z2M_BAUDRATE" "${Z2M_BAUDRATE:-}" ".env"
+upsert_env_var "Z2M_DEVICE_MAP" "$Z2M_DEVICE_MAP" ".env"
+upsert_env_var "Z2M_SERIAL_PORT" "$Z2M_SERIAL_PORT" ".env"
 
 # ---------------------------------------------------------------------------
 # Stage 1: bring up the stack WITHOUT matter-hub (it needs an HA token first).
@@ -371,6 +420,11 @@ fi
 if [ "$Z2MPATH" != "." ]; then
   echo "  Zigbee2MQTT          http://localhost:8099/?token=<master>"
   echo "    (single-token auth — paste master password as token, no user)"
+  if [ "$Z2M_TRANSPORT" = "tcp" ]; then
+    echo "    transport: TCP/PoE, coordinator at $Z2MPATH"
+  else
+    echo "    transport: USB, coordinator at $Z2MPATH"
+  fi
   echo ""
 fi
 echo "  Mosquitto MQTT       (separate, service-to-service)"

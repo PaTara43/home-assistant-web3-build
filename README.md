@@ -14,7 +14,7 @@ All image versions are pinned in `scripts/packages.env`. Custom themes, integrat
 
 - **Docker Engine** with the Compose plugin (not Docker Desktop): https://docs.docker.com/engine/install/ubuntu/. Add yourself to the `docker` group: `sudo usermod -aG docker $USER` (re-login after).
 - **System packages**: `sudo apt-get install -y git curl unzip openssl gettext-base` — needed for cloning, downloading add-ons, unzipping the camera card, generating the Mosquitto password, and `envsubst` config templating.
-- **Hardware**: plug your Zigbee coordinator in **before** running `setup.sh`. The script detects it through `/dev/serial/by-id/` and asks if you want to continue without it when nothing is found.
+- **Hardware**: plug your USB Zigbee coordinator in **before** running `setup.sh`. The script detects it through `/dev/serial/by-id/` and asks if you want to continue without it when nothing is found. For PoE/TCP coordinators (e.g. SMLight SLZB-06), no USB device is needed — set `Z2M_TRANSPORT=tcp` in `.env` instead (see [Configuration](#configuration)).
 
 ## Configuration
 
@@ -28,6 +28,7 @@ Edit `.env`. Defaults are sane for most setups:
 - `TZ` — IANA time zone (e.g. `Europe/Moscow`).
 - `ZIGBEE_CHANNEL` — 11–26. Channels 11/15/20/25 are typically least congested.
 - `ZIGBEE_ADAPTER` — adapter type (`ember` for Sonoff ZBDongle-E, `zstack` for ZBDongle-P, see `.env` comments for the rest).
+- `Z2M_TRANSPORT` — `usb` (default, auto-detected) or `tcp` for PoE coordinators (e.g. SMLight SLZB-06). For `tcp`, also set `Z2M_TCP_HOST` and optionally `Z2M_TCP_PORT` (default 6638) and `Z2M_BAUDRATE` (SLZB-06 → 115200). `ZIGBEE_ADAPTER` must match the chip: SLZB-06 → `zstack`.
 - `COMPOSE_PROFILES` — comma-separated optional profiles: `matter`, `matter-hub`, `z2m` (auto-added if a coordinator is detected). Leave empty for HA + Mosquitto only.
 
 Pinned image and add-on versions live in `scripts/packages.env`. Touch only if you know what you're doing.
@@ -101,6 +102,17 @@ The full list of installed themes / integrations / cards is in `scripts/packages
 MQTT broker on `localhost:1883`, user `connectivity`, password in `mosquitto/raw.txt`. Z2M and HA's MQTT integration are wired to it automatically. matter-hub's web UI is protected with HTTP basic auth (`admin` / master password). Login to HA / matter-hub / z2m all use the same master password — `setup.sh` prints it at the end and stores it in `homeassistant/raw.txt`.
 
 ## Notes per service
+
+### Zigbee2MQTT
+
+Two coordinator transports are supported, selected by `Z2M_TRANSPORT` in `.env`:
+
+- **`usb` (default)** — the coordinator is auto-detected from `/dev/serial/by-id/` and mapped into the container as `/dev/ttyACM0`. `setup.sh` and `update.sh` reconcile the profile when a stick is added/removed/swapped.
+- **`tcp`** — PoE coordinators reached over the network (e.g. SMLight SLZB-06). Set `Z2M_TRANSPORT=tcp`, `Z2M_TCP_HOST=<ip>`, `Z2M_TCP_PORT=6638` (SLZB-06 default), `ZIGBEE_ADAPTER=zstack`, and `Z2M_BAUDRATE=115200`. No USB device is mapped; `zigbee2mqtt` reaches the coordinator via host networking. USB detection and stick reconciliation in `update.sh` are skipped.
+
+`ZIGBEE_ADAPTER` must match the coordinator's chip family, not its transport: SLZB-06 → `zstack`, Sonoff ZBDongle-E → `ember`, etc.
+
+Adapter-specific tweaks (e.g. `disable_led`, `transmit_power` for SLZB-06) are not exposed in `.env` — edit `zigbee2mqtt/data/configuration.yaml` directly. That volume is operator-owned, so `update.sh` won't overwrite it.
 
 ### Mosquitto
 
