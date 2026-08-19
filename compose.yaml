@@ -32,6 +32,23 @@ services:
       # (coordinator is reached over the host network, no device to map).
       - ${Z2M_DEVICE_MAP}
 
+  zigbee2mqtt2:
+    container_name: zigbee2mqtt2
+    image: koenkk/zigbee2mqtt:${Z2M_VERSION}
+    profiles: [z2m2]
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    volumes:
+      - ./zigbee2mqtt2/data:/app/data
+      - /run/udev:/run/udev:ro
+    network_mode: host
+    environment:
+      - TZ=${TZ}
+    devices:
+      # USB: ${Z2M2_PATH}:/dev/ttyACM0. TCP/PoE: /dev/null:/dev/null.
+      - ${Z2M2_DEVICE_MAP}
+
   homeassistant:
     container_name: homeassistant
     image: ghcr.io/home-assistant/home-assistant:${HA_VERSION}

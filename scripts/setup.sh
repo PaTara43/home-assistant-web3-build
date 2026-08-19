@@ -77,17 +77,44 @@ source ./scripts/packages.env
 set +a
 
 # ---------------------------------------------------------------------------
-# Detect / configure Zigbee coordinator
+# Detect / configure Zigbee coordinator(s)
 #
-# Two transports are supported:
+# Two transports are supported per instance:
 #   usb (default) — auto-detected from /dev/serial/by-id/; device is mapped
 #                   into the container as /dev/ttyACM0.
 #   tcp           — PoE coordinators reached over the network (e.g. SMLight
 #                   SLZB-06 on tcp://<host>:6638). No USB device is mapped;
 #                   zigbee2mqtt reaches the coordinator via host networking.
+#
+# A second optional instance (profile z2m2) mirrors instance 1 with Z2M2_*
+# variables. usb+usb is NOT supported — use usb+tcp or tcp+tcp.
 # ---------------------------------------------------------------------------
+# Helper: pick a USB coordinator from /dev/serial/by-id/, excluding any path
+# already assigned to the other instance.
+#   pick_usb_stick EXCLUDE  -> echoes chosen path to stdout, or "FAIL".
+pick_usb_stick() {
+  local exclude="$1"
+  local candidates=()
+  while IFS= read -r -d '' f; do
+    [ "$f" != "$exclude" ] && candidates+=("$f")
+  done < <(find /dev/serial/by-id/ -mindepth 1 -maxdepth 1 -print0 2>/dev/null)
+  if [ "${#candidates[@]}" -eq 0 ]; then
+    echo "FAIL"
+  elif [ "${#candidates[@]}" -eq 1 ]; then
+    echo "${candidates[0]}"
+  else
+    echo "More than 1 connected serial device. Please choose your Zigbee coordinator:"
+    local f
+    select f in "${candidates[@]}"; do
+      [ -n "$f" ] && { echo "$f"; return; }
+      echo ">>> Invalid selection"
+    done
+  fi
+}
+
+# --- Instance 1 ---
 if [ "${Z2M_TRANSPORT:-usb}" = "tcp" ]; then
-  echo "Zigbee transport: tcp (PoE coordinator)"
+  echo "Zigbee transport (instance 1): tcp (PoE coordinator)"
   : "${Z2M_TCP_PORT:=6638}"
   if [ -z "${Z2M_TCP_HOST:-}" ]; then
     read -r -p "Enter PoE coordinator host/IP (e.g. 192.168.1.42): " Z2M_TCP_HOST
@@ -105,7 +132,7 @@ if [ "${Z2M_TRANSPORT:-usb}" = "tcp" ]; then
   # Reuse Z2MPATH as the "z2m is enabled" marker (non-"." value).
   Z2MPATH="$Z2M_SERIAL_PORT"
 else
-  echo "Zigbee transport: usb"
+  echo "Zigbee transport (instance 1): usb"
   if [ -d /dev/serial/by-id/ ] && [ -n "$(ls -A /dev/serial/by-id/ 2>/dev/null)" ]; then
     echo "Zigbee coordinator candidates found in /dev/serial/by-id/"
     NUMB=$(ls -1q /dev/serial/by-id/ | wc -l)
@@ -145,6 +172,60 @@ echo "Z2MPATH=$Z2MPATH"
 echo "Z2M_SERIAL_PORT=$Z2M_SERIAL_PORT"
 echo "Z2M_DEVICE_MAP=$Z2M_DEVICE_MAP"
 
+# --- Instance 2 (only if z2m2 is already in COMPOSE_PROFILES) ---
+# NOTE: z2m2 is never auto-enabled by setup.sh — the user must add it to
+# COMPOSE_PROFILES explicitly. We only configure it if it's already on.
+if [ "${Z2M_TRANSPORT:-usb}" = "usb" ] && [ "${Z2M2_TRANSPORT:-usb}" = "usb" ] \
+   && echo ",${COMPOSE_PROFILES:-}," | grep -q ",z2m2,"; then
+  echo "ERROR: usb+usb for two instances is not supported. Use usb+tcp or tcp+tcp." >&2
+  exit 1
+fi
+
+if echo ",${COMPOSE_PROFILES:-}," | grep -q ",z2m2,"; then
+  echo "----"
+  echo "Configuring second Zigbee2MQTT instance (z2m2)"
+  if [ "${Z2M2_TRANSPORT:-usb}" = "tcp" ]; then
+    echo "Zigbee transport (instance 2): tcp (PoE coordinator)"
+    : "${Z2M2_TCP_PORT:=6638}"
+    if [ -z "${Z2M2_TCP_HOST:-}" ]; then
+      read -r -p "Enter PoE coordinator host/IP for instance 2 (e.g. 192.168.1.43): " Z2M2_TCP_HOST
+      if [ -z "$Z2M2_TCP_HOST" ]; then
+        echo "ERROR: Z2M2_TCP_HOST is required for Z2M2_TRANSPORT=tcp." >&2
+        exit 1
+      fi
+    fi
+    if [ -z "${Z2M2_BAUDRATE:-}" ]; then
+      echo "WARNING: Z2M2_BAUDRATE is empty. Most PoE coordinators need a baudrate"
+      echo "         (SLZB-06 -> 115200). Set it in .env or edit zigbee2mqtt2/data/configuration.yaml later." >&2
+    fi
+    Z2M2_SERIAL_PORT="tcp://${Z2M2_TCP_HOST}:${Z2M2_TCP_PORT}"
+    Z2M2_DEVICE_MAP="/dev/null:/dev/null"
+    Z2M2_PATH="$Z2M2_SERIAL_PORT"
+  else
+    echo "Zigbee transport (instance 2): usb"
+    # Instance 1 is on tcp here (usb+usb was rejected above), so its Z2MPATH
+    # is a tcp://... string and won't collide with /dev/serial/by-id/* entries.
+    picked="$(pick_usb_stick "$Z2MPATH")"
+    if [ "$picked" = "FAIL" ]; then
+      echo "ERROR: no USB coordinator available for instance 2 (only one was detected and it's used by instance 1, or none attached)." >&2
+      exit 1
+    fi
+    Z2M2_PATH="$picked"
+    Z2M2_SERIAL_PORT="/dev/ttyACM0"
+    Z2M2_DEVICE_MAP="${Z2M2_PATH}:/dev/ttyACM0"
+  fi
+  export Z2M2_PATH Z2M2_SERIAL_PORT Z2M2_DEVICE_MAP
+  echo "Z2M2_PATH=$Z2M2_PATH"
+  echo "Z2M2_SERIAL_PORT=$Z2M2_SERIAL_PORT"
+  echo "Z2M2_DEVICE_MAP=$Z2M2_DEVICE_MAP"
+else
+  # z2m2 not requested — leave placeholders empty.
+  Z2M2_PATH=""
+  Z2M2_SERIAL_PORT=""
+  Z2M2_DEVICE_MAP="/dev/null:/dev/null"
+  export Z2M2_PATH Z2M2_SERIAL_PORT Z2M2_DEVICE_MAP
+fi
+
 # ---------------------------------------------------------------------------
 # Mosquitto + z2m: directories, config, password
 # ---------------------------------------------------------------------------
@@ -177,6 +258,47 @@ fi
 echo "Rendering zigbee2mqtt config from $Z2M_TPL"
 envsubst < "./scripts/addons_conf/zigbee2mqtt/$Z2M_TPL" \
   > ./zigbee2mqtt/data/configuration.yaml
+
+# --- Render second instance (if z2m2 is enabled) ---
+if echo ",${COMPOSE_PROFILES:-}," | grep -q ",z2m2,"; then
+  # Validate no collisions between instance 1 and instance 2.
+  if [ "${ZIGBEE_CHANNEL:-11}" = "${Z2M2_CHANNEL:-15}" ]; then
+    echo "ERROR: ZIGBEE_CHANNEL and Z2M2_CHANNEL must differ." >&2
+    exit 1
+  fi
+  if [ "${Z2M_FRONTEND_PORT:-8099}" = "${Z2M2_FRONTEND_PORT:-8100}" ]; then
+    echo "ERROR: Z2M_FRONTEND_PORT and Z2M2_FRONTEND_PORT must differ." >&2
+    exit 1
+  fi
+  if [ "${Z2M_BASE_TOPIC:-zigbee2mqtt}" = "${Z2M2_BASE_TOPIC:-zigbee2mqtt2}" ]; then
+    echo "ERROR: Z2M_BASE_TOPIC and Z2M2_BASE_TOPIC must differ." >&2
+    exit 1
+  fi
+
+  mkdir -p zigbee2mqtt2/data
+  if [ "${Z2M2_TRANSPORT:-usb}" = "tcp" ]; then
+    Z2M2_TPL="configuration.yaml.tcp.tpl"
+  else
+    Z2M2_TPL="configuration.yaml.usb.tpl"
+  fi
+  echo "Rendering zigbee2mqtt2 config from $Z2M2_TPL"
+  # Render instance 2 from the SAME template as instance 1, but override the
+  # shared variable names with instance-2 values ONLY for the envsubst child
+  # process — we don't touch the script's own environment (instance 1 vars
+  # remain intact for later use, e.g. the final credentials block).
+  env \
+    Z2M_BASE_TOPIC="${Z2M2_BASE_TOPIC:-zigbee2mqtt2}" \
+    Z2M_FRONTEND_PORT="${Z2M2_FRONTEND_PORT:-8100}" \
+    ZIGBEE_ADAPTER="${Z2M2_ADAPTER:-ember}" \
+    ZIGBEE_CHANNEL="${Z2M2_CHANNEL:-15}" \
+    Z2M_TCP_HOST="${Z2M2_TCP_HOST:-}" \
+    Z2M_TCP_PORT="${Z2M2_TCP_PORT:-6638}" \
+    Z2M_BAUDRATE="${Z2M2_BAUDRATE:-}" \
+    MOSQUITTO_PASSWORD="$MOSQUITTO_PASSWORD" \
+    Z2M_AUTH_TOKEN="$Z2M_AUTH_TOKEN" \
+    envsubst < "./scripts/addons_conf/zigbee2mqtt/$Z2M2_TPL" \
+    > ./zigbee2mqtt2/data/configuration.yaml
+fi
 
 # ---------------------------------------------------------------------------
 # Home Assistant: pre-seed MQTT integration
@@ -223,6 +345,21 @@ upsert_env_var "Z2M_TCP_PORT" "${Z2M_TCP_PORT:-6638}" ".env"
 upsert_env_var "Z2M_BAUDRATE" "${Z2M_BAUDRATE:-}" ".env"
 upsert_env_var "Z2M_DEVICE_MAP" "$Z2M_DEVICE_MAP" ".env"
 upsert_env_var "Z2M_SERIAL_PORT" "$Z2M_SERIAL_PORT" ".env"
+upsert_env_var "Z2M_FRONTEND_PORT" "${Z2M_FRONTEND_PORT:-8099}" ".env"
+upsert_env_var "Z2M_BASE_TOPIC" "${Z2M_BASE_TOPIC:-zigbee2mqtt}" ".env"
+
+# Instance 2 values (persisted only when z2m2 is enabled; empty otherwise).
+upsert_env_var "Z2M2_TRANSPORT" "${Z2M2_TRANSPORT:-usb}" ".env"
+upsert_env_var "Z2M2_TCP_HOST" "${Z2M2_TCP_HOST:-}" ".env"
+upsert_env_var "Z2M2_TCP_PORT" "${Z2M2_TCP_PORT:-6638}" ".env"
+upsert_env_var "Z2M2_BAUDRATE" "${Z2M2_BAUDRATE:-}" ".env"
+upsert_env_var "Z2M2_ADAPTER" "${Z2M2_ADAPTER:-ember}" ".env"
+upsert_env_var "Z2M2_CHANNEL" "${Z2M2_CHANNEL:-15}" ".env"
+upsert_env_var "Z2M2_FRONTEND_PORT" "${Z2M2_FRONTEND_PORT:-8100}" ".env"
+upsert_env_var "Z2M2_BASE_TOPIC" "${Z2M2_BASE_TOPIC:-zigbee2mqtt2}" ".env"
+upsert_env_var "Z2M2_PATH" "${Z2M2_PATH:-}" ".env"
+upsert_env_var "Z2M2_DEVICE_MAP" "$Z2M2_DEVICE_MAP" ".env"
+upsert_env_var "Z2M2_SERIAL_PORT" "${Z2M2_SERIAL_PORT:-}" ".env"
 
 # ---------------------------------------------------------------------------
 # Stage 1: bring up the stack WITHOUT matter-hub (it needs an HA token first).
@@ -419,12 +556,22 @@ if echo ",${FULL_PROFILES}," | grep -q ",matter-hub,"; then
   echo ""
 fi
 if [ "$Z2MPATH" != "." ]; then
-  echo "  Zigbee2MQTT          http://localhost:8099/?token=<master>"
+  echo "  Zigbee2MQTT          http://localhost:${Z2M_FRONTEND_PORT:-8099}/?token=<master>"
   echo "    (single-token auth — paste master password as token, no user)"
   if [ "$Z2M_TRANSPORT" = "tcp" ]; then
     echo "    transport: TCP/PoE, coordinator at $Z2MPATH"
   else
     echo "    transport: USB, coordinator at $Z2MPATH"
+  fi
+  echo ""
+fi
+if echo ",${FULL_PROFILES}," | grep -q ",z2m2,"; then
+  echo "  Zigbee2MQTT (2)      http://localhost:${Z2M2_FRONTEND_PORT:-8100}/?token=<master>"
+  echo "    (single-token auth — paste master password as token, no user)"
+  if [ "${Z2M2_TRANSPORT:-usb}" = "tcp" ]; then
+    echo "    transport: TCP/PoE, coordinator at $Z2M2_PATH"
+  else
+    echo "    transport: USB, coordinator at $Z2M2_PATH"
   fi
   echo ""
 fi

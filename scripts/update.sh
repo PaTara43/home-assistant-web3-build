@@ -31,6 +31,7 @@ get_running_image() {
 # Snapshot currently running images so we can clean up old ones at the end
 # ---------------------------------------------------------------------------
 Z2M_CUR="$(get_running_image zigbee2mqtt)"
+Z2M2_CUR="$(get_running_image zigbee2mqtt2)"
 HA_CUR="$(get_running_image homeassistant)"
 MQTT_CUR="$(get_running_image mosquitto)"
 MATTER_CUR="$(get_running_image matter-server)"
@@ -38,6 +39,7 @@ MATTERHUB_CUR="$(get_running_image matter-hub)"
 
 echo "Currently running images:"
 echo "  zigbee2mqtt     : ${Z2M_CUR:-<not running>}"
+echo "  zigbee2mqtt2    : ${Z2M2_CUR:-<not running>}"
 echo "  homeassistant   : ${HA_CUR:-<not running>}"
 echo "  mosquitto       : ${MQTT_CUR:-<not running>}"
 echo "  matter-server   : ${MATTER_CUR:-<not running>}"
@@ -167,6 +169,88 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Reconcile second Zigbee instance (z2m2) — only if the profile is enabled.
+# Same logic as instance 1, but driven by Z2M2_* variables. tcp skips USB
+# reconciliation. usb+usb across both instances is rejected.
+# ---------------------------------------------------------------------------
+Z2M2_PATH="${Z2M2_PATH:-}"
+Z2M2_SERIAL_PORT="${Z2M2_SERIAL_PORT:-}"
+Z2M2_DEVICE_MAP="${Z2M2_DEVICE_MAP:-/dev/null:/dev/null}"
+
+if echo ",${COMPOSE_PROFILES:-}," | grep -q ",z2m2,"; then
+  if [ "${Z2M_TRANSPORT:-usb}" = "usb" ] && [ "${Z2M2_TRANSPORT:-usb}" = "usb" ]; then
+    echo "ERROR: usb+usb for two instances is not supported. Use usb+tcp or tcp+tcp." >&2
+    exit 1
+  fi
+
+  if [ "${Z2M2_TRANSPORT:-usb}" = "tcp" ]; then
+    echo "Zigbee transport (instance 2): tcp (PoE coordinator). Skipping USB reconciliation."
+    : "${Z2M2_TCP_PORT:=6638}"
+    Z2M2_SERIAL_PORT="tcp://${Z2M2_TCP_HOST}:${Z2M2_TCP_PORT}"
+    Z2M2_DEVICE_MAP="/dev/null:/dev/null"
+    : "${Z2M2_PATH:=$Z2M2_SERIAL_PORT}"
+    export Z2M2_PATH Z2M2_SERIAL_PORT Z2M2_DEVICE_MAP
+    echo "Z2M2_PATH=$Z2M2_PATH"
+    echo "Z2M2_DEVICE_MAP=$Z2M2_DEVICE_MAP"
+  else
+    # usb instance 2 — reuse helpers defined above (ask_yn, select_stick).
+    # NOTE: select_stick operates on DETECTED_LIST which was built for instance 1.
+    # That's fine: instance 1 is on tcp here (usb+usb was rejected), so the list
+    # is still valid and contains whatever USB sticks are attached.
+    PREV_Z2M2_PATH="${Z2M2_PATH:-.}"
+    if [ "$PREV_Z2M2_PATH" = "." ] || [ -z "$PREV_Z2M2_PATH" ]; then
+      if [ "${#DETECTED_LIST[@]}" -eq 0 ]; then
+        echo "No USB Zigbee coordinator available for instance 2. z2m2 cannot start." >&2
+        exit 1
+      else
+        echo "A USB coordinator is attached for instance 2."
+        if ask_yn "Use it for z2m2?"; then
+          select_stick
+          Z2M2_PATH="$Z2MPATH"
+        else
+          echo "Exiting — z2m2 requires a coordinator." >&2
+          exit 1
+        fi
+      fi
+    else
+      if [ -e "$PREV_Z2M2_PATH" ]; then
+        echo "Zigbee coordinator for instance 2 unchanged: $PREV_Z2M2_PATH"
+        Z2M2_PATH="$PREV_Z2M2_PATH"
+      elif [ "${#DETECTED_LIST[@]}" -eq 0 ]; then
+        echo "Previous coordinator for instance 2 ($PREV_Z2M2_PATH) is gone, and no other stick is attached." >&2
+        if ask_yn "Continue without z2m2?"; then
+          # Disable z2m2 for this run by removing it from PROFILES below.
+          Z2M2_PATH="."
+        else
+          echo "Exiting — plug the stick back in or update Z2M2_PATH manually." >&2
+          exit 1
+        fi
+      else
+        echo "Previous coordinator for instance 2 ($PREV_Z2M2_PATH) is gone, but another stick is attached."
+        if ask_yn "Switch to the newly attached stick for instance 2?"; then
+          select_stick
+          Z2M2_PATH="$Z2MPATH"
+        else
+          echo "Exiting — keep current path or remove stick and re-run." >&2
+          exit 1
+        fi
+      fi
+    fi
+
+    if [ "$Z2M2_PATH" != "." ] && [ -n "$Z2M2_PATH" ]; then
+      Z2M2_SERIAL_PORT="/dev/ttyACM0"
+      Z2M2_DEVICE_MAP="${Z2M2_PATH}:/dev/ttyACM0"
+    else
+      Z2M2_SERIAL_PORT=""
+      Z2M2_DEVICE_MAP="/dev/null:/dev/null"
+    fi
+    export Z2M2_PATH Z2M2_SERIAL_PORT Z2M2_DEVICE_MAP
+    echo "Z2M2_PATH=$Z2M2_PATH"
+    echo "Z2M2_DEVICE_MAP=$Z2M2_DEVICE_MAP"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Build profiles list
 # ---------------------------------------------------------------------------
 PROFILES="${COMPOSE_PROFILES:-}"
@@ -179,7 +263,33 @@ if [ "$Z2MPATH" != "." ]; then
 else
   PROFILES="$(echo ",$PROFILES," | sed 's/,z2m,/,/g; s/^,//; s/,$//')"
 fi
+
+# z2m2 is never auto-added — only auto-removed if its coordinator is gone.
+if echo ",${PROFILES}," | grep -q ",z2m2,"; then
+  if [ -z "$Z2M2_PATH" ] || [ "$Z2M2_PATH" = "." ]; then
+    echo "z2m2 coordinator unavailable — removing z2m2 from profiles for this run." >&2
+    PROFILES="$(echo ",$PROFILES," | sed 's/,z2m2,/,/g; s/^,//; s/,$//')"
+  fi
+fi
 export COMPOSE_PROFILES="$PROFILES"
+
+# ---------------------------------------------------------------------------
+# Validate no collisions between instance 1 and instance 2 (both enabled).
+# ---------------------------------------------------------------------------
+if echo ",${PROFILES}," | grep -q ",z2m," && echo ",${PROFILES}," | grep -q ",z2m2,"; then
+  if [ "${ZIGBEE_CHANNEL:-11}" = "${Z2M2_CHANNEL:-15}" ]; then
+    echo "ERROR: ZIGBEE_CHANNEL and Z2M2_CHANNEL must differ." >&2
+    exit 1
+  fi
+  if [ "${Z2M_FRONTEND_PORT:-8099}" = "${Z2M2_FRONTEND_PORT:-8100}" ]; then
+    echo "ERROR: Z2M_FRONTEND_PORT and Z2M2_FRONTEND_PORT must differ." >&2
+    exit 1
+  fi
+  if [ "${Z2M_BASE_TOPIC:-zigbee2mqtt}" = "${Z2M2_BASE_TOPIC:-zigbee2mqtt2}" ]; then
+    echo "ERROR: Z2M_BASE_TOPIC and Z2M2_BASE_TOPIC must differ." >&2
+    exit 1
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # matter-hub sanity: token is provisioned headlessly by setup.sh and lives
@@ -201,6 +311,12 @@ fi
 upsert_env_var "Z2MPATH" "$Z2MPATH" ".env"
 upsert_env_var "Z2M_DEVICE_MAP" "$Z2M_DEVICE_MAP" ".env"
 upsert_env_var "Z2M_SERIAL_PORT" "$Z2M_SERIAL_PORT" ".env"
+
+if echo ",${COMPOSE_PROFILES:-}," | grep -q ",z2m2,"; then
+  upsert_env_var "Z2M2_PATH" "$Z2M2_PATH" ".env"
+  upsert_env_var "Z2M2_DEVICE_MAP" "$Z2M2_DEVICE_MAP" ".env"
+  upsert_env_var "Z2M2_SERIAL_PORT" "$Z2M2_SERIAL_PORT" ".env"
+fi
 
 # ---------------------------------------------------------------------------
 # Pull and restart
@@ -227,6 +343,7 @@ cleanup_old() {
 
 cleanup_old "Mosquitto"       "$MQTT_CUR"      "eclipse-mosquitto:${MOSQUITTO_VERSION}"
 cleanup_old "Zigbee2MQTT"     "$Z2M_CUR"       "koenkk/zigbee2mqtt:${Z2M_VERSION}"
+cleanup_old "Zigbee2MQTT (2)" "$Z2M2_CUR"      "koenkk/zigbee2mqtt:${Z2M_VERSION}"
 cleanup_old "Home Assistant"  "$HA_CUR"        "ghcr.io/home-assistant/home-assistant:${HA_VERSION}"
 cleanup_old "Matter Server"   "$MATTER_CUR"    "ghcr.io/matter-js/matterjs-server:${MATTER_VERSION}"
 cleanup_old "Matter Hub"      "$MATTERHUB_CUR" "ghcr.io/riddix/home-assistant-matter-hub:${MATTER_HUB_VERSION}"

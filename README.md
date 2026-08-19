@@ -30,7 +30,8 @@ Edit `.env`. Defaults are sane for most setups:
 - `ZIGBEE_CHANNEL` — 11–26. Channels 11/15/20/25 are typically least congested.
 - `ZIGBEE_ADAPTER` — adapter type (`ember` for Sonoff ZBDongle-E, `zstack` for ZBDongle-P, see `.env` comments for the rest).
 - `Z2M_TRANSPORT` — `usb` (default, auto-detected) or `tcp` for PoE coordinators (e.g. SMLight SLZB-06). For `tcp`, also set `Z2M_TCP_HOST` and optionally `Z2M_TCP_PORT` (default 6638) and `Z2M_BAUDRATE` (SLZB-06 → 115200). `ZIGBEE_ADAPTER` must match the chip: SLZB-06 → `zstack`.
-- `COMPOSE_PROFILES` — comma-separated optional profiles: `matter`, `matter-hub`, `z2m` (auto-added if a coordinator is detected). Leave empty for HA + Mosquitto only.
+- `Z2M_FRONTEND_PORT`, `Z2M_BASE_TOPIC` — frontend port (default 8099) and MQTT base topic (default `zigbee2mqtt`) for instance 1. Change only if running a second instance.
+- `COMPOSE_PROFILES` — comma-separated optional profiles: `z2m`, `z2m2`, `matter`, `matter-hub`. `z2m` is auto-added if a coordinator is detected; `z2m2` is opt-in (see [two coordinators](#two-zigbee-coordinators-optional)). Leave empty for HA + Mosquitto only.
 
 Pinned image and add-on versions live in `scripts/packages.env`. Touch only if you know what you're doing.
 
@@ -114,6 +115,31 @@ Two coordinator transports are supported, selected by `Z2M_TRANSPORT` in `.env`:
 `ZIGBEE_ADAPTER` must match the coordinator's chip family, not its transport: SLZB-06 → `zstack`, Sonoff ZBDongle-E → `ember`, etc.
 
 Adapter-specific tweaks (e.g. `disable_led`, `transmit_power` for SLZB-06) are not exposed in `.env` — edit `zigbee2mqtt/data/configuration.yaml` directly. That volume is operator-owned, so `update.sh` won't overwrite it.
+
+#### Two Zigbee coordinators (optional)
+
+For a large home with one coordinator per floor, add a second Zigbee2MQTT instance via the `z2m2` profile. Configure the `Z2M2_*` block in `.env` and add `z2m2` to `COMPOSE_PROFILES`:
+
+```env
+COMPOSE_PROFILES=z2m,z2m2
+```
+
+Each instance needs **distinct** values for channel, frontend port, and MQTT base topic — `setup.sh` and `update.sh` validate this and refuse to start on collisions:
+
+| Setting              | Instance 1 (z2m)         | Instance 2 (z2m2)           |
+|----------------------|--------------------------|-----------------------------|
+| Channel              | `ZIGBEE_CHANNEL=11`      | `Z2M2_CHANNEL=15`           |
+| Frontend port        | `Z2M_FRONTEND_PORT=8099`  | `Z2M2_FRONTEND_PORT=8100`   |
+| Base topic           | `Z2M_BASE_TOPIC=zigbee2mqtt` | `Z2M2_BASE_TOPIC=zigbee2mqtt2` |
+| Transport / adapter  | `Z2M_TRANSPORT`, `ZIGBEE_ADAPTER` | `Z2M2_TRANSPORT`, `Z2M2_ADAPTER` |
+| TCP (if PoE)         | `Z2M_TCP_HOST`, `Z2M_TCP_PORT`, `Z2M_BAUDRATE` | `Z2M2_TCP_HOST`, `Z2M2_TCP_PORT`, `Z2M2_BAUDRATE` |
+
+Constraints:
+
+- **`usb+usb` is not supported** — use `usb+tcp` or `tcp+tcp` (the scripts reject `usb+usb` with an error).
+- `z2m2` is **never auto-enabled** — add it explicitly to `COMPOSE_PROFILES`. `z2m` remains auto-reconciled.
+- Both instances share `Z2M_AUTH_TOKEN` for frontend auth and the Mosquitto broker; HA's MQTT integration picks up both via discovery automatically (distinct base topics).
+- Data lives in `zigbee2mqtt2/data/` (separate volume from instance 1).
 
 ### Mosquitto
 

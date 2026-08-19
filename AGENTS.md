@@ -38,10 +38,11 @@ Both loaded via `set -a; source ./.env; source ./scripts/packages.env; set +a`.
 
 ## Profiles
 
-`z2m`, `matter`, `matter-hub` (comma-separated in `COMPOSE_PROFILES`). `z2m` is **auto-reconciled** by `setup.sh`/`update.sh` — don't hand-edit it. `matter` and `matter-hub` are user-controlled.
+`z2m`, `z2m2`, `matter`, `matter-hub` (comma-separated in `COMPOSE_PROFILES`). `z2m` is **auto-reconciled** by `setup.sh`/`update.sh` — don't hand-edit it. `z2m2`, `matter` and `matter-hub` are user-controlled.
 
 - `matter` = matter.js Server — brings external Matter devices **into** HA.
 - `matter-hub` = home-assistant-matter-hub — bridges HA entities **out** as Matter devices (Apple/Google/Alexa). Independent; run either, both, or neither.
+- `z2m2` = second Zigbee2MQTT instance (e.g. two floors). See below.
 
 ## Zigbee transport: usb vs tcp
 
@@ -49,6 +50,16 @@ Both loaded via `set -a; source ./.env; source ./scripts/packages.env; set +a`.
 
 - **`usb` (default)** — coordinator auto-detected from `/dev/serial/by-id/`; mapped into the container as `/dev/ttyACM0` (`Z2M_DEVICE_MAP=${Z2MPATH}:/dev/ttyACM0`). `setup.sh` and `update.sh` reconcile the profile when the stick is added/removed/swapped (truth table in `update.sh`).
 - **`tcp`** — PoE coordinators (e.g. SMLight SLZB-06). Set `Z2M_TCP_HOST`, `Z2M_TCP_PORT` (default 6638), `Z2M_BAUDRATE` (115200 for SLZB-06), and `ZIGBEE_ADAPTER` to the chip family (SLZB-06 → `zstack`). `Z2M_DEVICE_MAP=/dev/null:/dev/null` (no device to map; host networking reaches it). USB detection and stick reconciliation in `update.sh` are **skipped**; profile `z2m` stays enabled. Config template: `scripts/addons_conf/zigbee2mqtt/configuration.yaml.tcp.tpl`.
+
+## Second Zigbee instance (z2m2)
+
+Optional, for two coordinators (e.g. two floors). Enable by adding `z2m2` to `COMPOSE_PROFILES`; configure the `Z2M2_*` block in `.env`. `z2m2` is **never auto-enabled**.
+
+- Instances must differ in `ZIGBEE_CHANNEL`/`Z2M2_CHANNEL`, `Z2M_FRONTEND_PORT`/`Z2M2_FRONTEND_PORT`, and `Z2M_BASE_TOPIC`/`Z2M2_BASE_TOPIC`. `setup.sh`/`update.sh` validate and refuse to start on collisions.
+- **`usb+usb` is rejected** — use `usb+tcp` or `tcp+tcp`.
+- Both instances share `Z2M_AUTH_TOKEN` (frontend auth) and the Mosquitto broker; HA picks up both via MQTT discovery (distinct base topics).
+- Config is rendered from the **same** `configuration.yaml.{usb,tcp}.tpl` templates as instance 1 — `setup.sh` uses `env VAR=val envsubst` to override shared variable names with `Z2M2_*` values for the second render, without touching the script's own environment.
+- Data volume: `zigbee2mqtt2/data/` (separate from instance 1).
 
 ## Secrets model
 
