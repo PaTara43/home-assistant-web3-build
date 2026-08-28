@@ -24,18 +24,22 @@ There are no tests, no linter config, no build step. Shell scripts use `set -euo
 
 ## Architecture and conventions
 
-**Two-file env split.** `.env` (gitignored values like `MOSQUITTO_PASSWORD`, `Z2MPATH`, plus user-tunable things like `TZ`, `ZIGBEE_CHANNEL`, `COMPOSE_PROFILES`) and `scripts/packages.env` (pinned image tags and add-on versions). Both are sourced by every script via `set -a; source ...; set +a`. `compose.yaml` references variables from both files; nothing in compose is `:latest`.
+**Two-file env split.** `template.env` (tracked defaults-only template; copy to `.env` and edit — `.env` is gitignored and holds user-tunable things like `TZ`, `ZIGBEE_CHANNEL`, `COMPOSE_PROFILES` plus generated secrets like `MOSQUITTO_PASSWORD`, `Z2MPATH`) and `scripts/packages.env` (pinned image tags and add-on versions). Both are sourced by every script via `set -a; source ...; set +a`. `compose.yaml` references variables from both files; nothing in compose is `:latest`.
 
-**Optional services are profiles, not separate compose files.** `z2m`, `matter`, `matter-hub`. The `z2m` profile is **auto-managed by setup.sh and update.sh** based on whether a Zigbee coordinator is detected under `/dev/serial/by-id/` — they edit `COMPOSE_PROFILES` in `.env` accordingly. Don't hand-edit the `z2m` entry; let the scripts reconcile it. Other profiles are user-controlled.
+**Optional services are profiles, not separate compose files.** `z2m`, `z2m2`, `matter`, `matter-hub`. The `z2m` profile is **auto-managed by setup.sh and update.sh** — they edit `COMPOSE_PROFILES` in `.env` accordingly. Don't hand-edit the `z2m` entry; let the scripts reconcile it. `z2m2`, `matter` and `matter-hub` are user-controlled.
 
 **`matter` vs `matter-hub` are different directions.** `matter` is matter.js Server — Matter controller, brings external Matter devices **into** HA. `matter-hub` is home-assistant-matter-hub — bridges HA entities **out** as Matter devices for Apple/Google/Alexa. They're independent; you can run either, both, or neither.
+
+**Second Zigbee instance (z2m2).** Optional, for two coordinators (e.g. two floors). Enable by adding `z2m2` to `COMPOSE_PROFILES` and configuring the `Z2M2_*` block in `.env`. Instances must differ in channel, frontend port, and base topic — `setup.sh`/`update.sh` validate and refuse on collisions. `usb+usb` is rejected (use `usb+tcp` or `tcp+tcp`). Both instances share `Z2M_AUTH_TOKEN` and the Mosquitto broker; HA picks up both via MQTT discovery (distinct base topics). Config is rendered from the **same** `configuration.yaml.{usb,tcp}.tpl` templates — `setup.sh` uses `env VAR=val envsubst` to override shared variable names with `Z2M2_*` values for the second render, without touching the script's own environment. Data volume: `zigbee2mqtt2/data/`.
+
+**Zigbee transport: usb vs tcp.** `Z2M_TRANSPORT` in `.env` selects how `zigbee2mqtt` reaches the coordinator. **usb** (default) auto-detects from `/dev/serial/by-id/` and maps the stick into the container as `/dev/ttyACM0` (`Z2M_DEVICE_MAP=${Z2MPATH}:/dev/ttyACM0`); `setup.sh`/`update.sh` reconcile the profile on add/remove/swap (truth table in `update.sh`). **tcp** is for PoE coordinators (e.g. SMLight SLZB-06): set `Z2M_TCP_HOST`, `Z2M_TCP_PORT` (default 6638), `Z2M_BAUDRATE` (115200 for SLZB-06), and `ZIGBEE_ADAPTER` to the chip family (SLZB-06 → `zstack`); `Z2M_DEVICE_MAP=/dev/null:/dev/null` (no device to map; host networking reaches it). USB detection and stick reconciliation in `update.sh` are **skipped** for `tcp`; profile `z2m` stays enabled. Config templates: `scripts/addons_conf/zigbee2mqtt/configuration.yaml.{usb,tcp}.tpl`.
 
 **Headless HA onboarding always runs in setup.sh.** 
 `setup.sh` walks the entire HA onboarding API: `POST /api/onboarding/users` (creates the hardcoded `admin` user with the master password — same hex string used as matter-hub HTTP basic-auth password and as the z2m frontend `auth_token`), `/auth/token` to swap the auth_code for a short-lived access_token, then a WebSocket call (`auth/long_lived_access_token`) for a 10-year token, and finally `core_config` / `analytics` / `integration` to flip the rest of the wizard to "done". The long-lived token goes into `.env` as `HAMH_HOME_ASSISTANT_ACCESS_TOKEN`; the master password into `homeassistant/raw.txt` and stdout. The WebSocket call is run via `docker compose exec homeassistant python3` to avoid adding a host-side websockets dependency. If `matter-hub` *is* in profiles, a second `docker compose up -d` (Stage 2) starts the bridge after the token is on disk; otherwise Stage 2 is skipped.
 
 **Single master password.** `setup.sh` generates ONE 16-byte hex value and reuses it as `HA_ADMIN_PASSWORD` (HA admin login), `HAMH_HTTP_AUTH_PASSWORD` (matter-hub web UI basic auth, username `admin` is hardcoded in compose.yaml), and `Z2M_AUTH_TOKEN` (zigbee2mqtt frontend `auth_token`). The Mosquitto password is intentionally separate — that one is a service-to-service credential, not a UI password.
 
-**`setup.sh` is for clean installs only.** It refuses to run if any of `homeassistant/`, `mosquitto/`, `zigbee2mqtt/`, `matter-server/`, `matter-hub/` already exist. For an existing stack, use `update.sh`. Reset = `stop.sh` + `rm -rf` those dirs + `git checkout -- .env` + `setup.sh`.
+**`setup.sh` is for clean installs only.** It refuses to run if any of `homeassistant/`, `mosquitto/`, `zigbee2mqtt/`, `matter-server/`, `matter-hub/` already exist. For an existing stack, use `update.sh`. Reset = `stop.sh` + `rm -rf` those dirs + `rm -f .env` + `cp template.env .env` + `setup.sh`.
 
 **Volumes are operator-owned after first install.** `update.sh` does **not** regenerate config files in volumes (`mosquitto/config/mosquitto.conf`, `zigbee2mqtt/data/configuration.yaml`, HA's `.storage/*`). These are templated only on the initial `setup.sh` from `scripts/addons_conf/{mosquitto,zigbee2mqtt,ha_integrations}/` via `envsubst`. If you change a template, it won't propagate to a running install — say so explicitly.
 
@@ -51,7 +55,7 @@ There are no tests, no linter config, no build step. Shell scripts use `set -euo
 
 ## Editing rules specific to this repo
 
-- Never commit `.env` after `setup.sh` (it then contains the generated MQTT password and resolved `Z2MPATH`). The shipped `.env` is the defaults-only template.
+- Never commit `.env` — it's gitignored and holds generated secrets after `setup.sh`. The tracked template is `template.env`.
 - Never pin to `:latest` in `compose.yaml` or in any installer script — versions go in `scripts/packages.env`.
 - Scripts must remain idempotent and runnable from any CWD. Keep the `SCRIPT_DIR` / `cd "$REPO_ROOT"` preamble.
 - HA YAML uses the modern syntax (`triggers:` / `actions:` / `action:` inside actions, modern `template:` format). Current HA series pinned: see `HA_VERSION` in `scripts/packages.env`.
