@@ -5,5 +5,8 @@
 /matter-server/
 /matter-hub/
 
+# Runtime config — copied from template.env, contains secrets after setup.sh.
+/.env
+
 # Local backups produced by sed -i.bak
 *.bak

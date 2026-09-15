@@ -7,7 +7,7 @@ homeassistant:
 permit_join: false
 
 mqtt:
-  base_topic: zigbee2mqtt
+  base_topic: ${Z2M_BASE_TOPIC}
   server: 'mqtt://localhost'
   user: connectivity
   password: ${MOSQUITTO_PASSWORD}
@@ -21,11 +21,12 @@ advanced:
   log_level: warn
 
 frontend:
-  port: 8099
+  port: ${Z2M_FRONTEND_PORT}
   auth_token: ${Z2M_AUTH_TOKEN}
 
 serial:
-  port: /dev/ttyACM0
+  port: tcp://${Z2M_TCP_HOST}:${Z2M_TCP_PORT}
+  baudrate: ${Z2M_BAUDRATE}
   adapter: ${ZIGBEE_ADAPTER}
 
 availability:
