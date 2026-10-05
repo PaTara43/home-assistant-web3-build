@@ -74,6 +74,26 @@ install_subfolder() {
   mv "$new" "$target"
 }
 
+# install_zip_release REPO TAG ASSET TARGET_DIR
+#   For integrations shipped as a release zip (hacs.json "zip_release": true):
+#   the zip holds the integration files at its root, with the real version in
+#   manifest.json (the tagged source may carry a placeholder).
+install_zip_release() {
+  local repo="$1" tag="$2" asset="$3" target="$4"
+  local url="https://github.com/${repo}/releases/download/${tag}/${asset}"
+  local new="${STAGING_DIR}/${target##*/}"
+  local zip="${STAGING_DIR}/${asset}"
+
+  echo "==> ${repo}@${tag} :: ${asset} -> ${target}"
+
+  curl -fsSL "$url" -o "$zip"
+  mkdir -p "$new"
+  unzip -q "$zip" -d "$new"
+
+  remove_dir "$target"
+  mv "$new" "$target"
+}
+
 install_subfolder \
   "KartoffelToby/better_thermostat" \
   "$BETTER_THERMOSTAT_VERSION" \
@@ -105,6 +125,12 @@ install_subfolder \
   "$YANDEX_STATION_VERSION" \
   "custom_components/yandex_station" \
   "$INTEGRATIONS_DIR/yandex_station"
+
+install_zip_release \
+  "andrew-codechimp/HA-Battery-Notes" \
+  "$BATTERY_NOTES_VERSION" \
+  "battery_notes.zip" \
+  "$INTEGRATIONS_DIR/battery_notes"
 
 echo ""
 echo "Done. Installed custom integrations:"
