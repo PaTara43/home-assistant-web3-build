@@ -77,6 +77,21 @@ source ./scripts/packages.env
 set +a
 
 # ---------------------------------------------------------------------------
+# Locale — shown and checked up front: it is applied only after onboarding,
+# so a typo would otherwise surface when the stack is already up.
+# ---------------------------------------------------------------------------
+: "${TZ:=Europe/Moscow}" "${HA_LANGUAGE:=ru}" "${HA_COUNTRY:=RU}" "${HA_CURRENCY:=RUB}"
+echo "HA locale: TZ=${TZ} HA_LANGUAGE=${HA_LANGUAGE} HA_COUNTRY=${HA_COUNTRY} HA_CURRENCY=${HA_CURRENCY} (edit .env to change)"
+if [ ! -f "/usr/share/zoneinfo/${TZ}" ]; then
+  echo "ERROR: TZ='${TZ}' is not a tz database name (no /usr/share/zoneinfo/${TZ})." >&2
+  exit 1
+fi
+if ! [[ "$HA_COUNTRY" =~ ^[A-Z]{2}$ && "$HA_CURRENCY" =~ ^[A-Z]{3}$ && "$HA_LANGUAGE" =~ ^[a-z]{2,3}(-[A-Za-z]{2,4})?$ ]]; then
+  echo "ERROR: HA_COUNTRY (2 letters, e.g. RU), HA_CURRENCY (3 letters, e.g. RUB) or HA_LANGUAGE (e.g. ru, en, pt-BR) is malformed." >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Detect / configure Zigbee coordinator(s)
 #
 # Two transports are supported per instance:
@@ -388,7 +403,7 @@ docker compose up -d
 #   7. Persist token in .env, optionally start matter-hub.
 # ---------------------------------------------------------------------------
 HA_ADMIN_USERNAME="admin"
-HA_ADMIN_LANGUAGE="${HA_LANGUAGE:-ru}"
+HA_ADMIN_LANGUAGE="${HA_LANGUAGE}"
 
 echo -n "$HA_ADMIN_PASSWORD" > ./homeassistant/raw.txt
 chmod 600 ./homeassistant/raw.txt
@@ -519,9 +534,9 @@ echo "HA onboarding completed."
 # the core config and the admin user's UI language. Location stays at HA
 # defaults — it is per install (Settings -> System -> General).
 # ---------------------------------------------------------------------------
-echo "Applying locale: time_zone=${TZ:-Europe/Moscow} country=${HA_COUNTRY:-RU} currency=${HA_CURRENCY:-RUB} language=${HA_LANGUAGE:-ru} ..."
-docker compose exec -T homeassistant python3 - "$ACCESS_TOKEN" "${TZ:-Europe/Moscow}" \
-  "${HA_COUNTRY:-RU}" "${HA_CURRENCY:-RUB}" "${HA_LANGUAGE:-ru}" <<'PYEOF' \
+echo "Applying locale: time_zone=${TZ} country=${HA_COUNTRY} currency=${HA_CURRENCY} language=${HA_LANGUAGE} ..."
+docker compose exec -T homeassistant python3 - "$ACCESS_TOKEN" "${TZ}" \
+  "${HA_COUNTRY}" "${HA_CURRENCY}" "${HA_LANGUAGE}" <<'PYEOF' \
   || echo "WARNING: locale not applied — set it in Settings -> System -> General (continuing)." >&2
 import asyncio, sys, aiohttp
 

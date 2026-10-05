@@ -27,7 +27,7 @@ cp template.env .env
 Edit `.env`. Defaults are sane for most setups:
 
 - `TZ` — IANA time zone (e.g. `Europe/Moscow`); also becomes HA's time zone.
-- `HA_LANGUAGE`, `HA_COUNTRY`, `HA_CURRENCY` — HA locale applied right after onboarding (defaults `ru`, `RU`, `RUB`).
+- `HA_LANGUAGE`, `HA_COUNTRY`, `HA_CURRENCY` — HA locale applied right after onboarding (defaults `ru`, `RU`, `RUB`; Cyprus, e.g.: `TZ=Asia/Nicosia`, `en`, `CY`, `EUR`). Default areas are named in `HA_LANGUAGE`. `setup.sh` prints the locale and checks it before touching anything.
 - `ZIGBEE_CHANNEL` — 11–26. Channels 11/15/20/25 are typically least congested.
 - `ZIGBEE_ADAPTER` — adapter type (`ember` for Sonoff ZBDongle-E, `zstack` for ZBDongle-P, see `.env` comments for the rest).
 - `Z2M_TRANSPORT` — `usb` (default, auto-detected) or `tcp` for PoE coordinators (e.g. SMLight SLZB-06). For `tcp`, also set `Z2M_TCP_HOST` and optionally `Z2M_TCP_PORT` (default 6638) and `Z2M_BAUDRATE` (SLZB-06 → 115200). `ZIGBEE_ADAPTER` must match the chip: SLZB-06 → `zstack`.
