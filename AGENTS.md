@@ -69,7 +69,7 @@ Optional, for two coordinators (e.g. two floors). Enable by adding `z2m2` to `CO
 ## setup.sh runs headless HA onboarding + two-stage startup
 
 1. Stage 1: `docker compose up` **without** `matter-hub` (it needs an HA token first).
-2. Wait for HA API, `POST /api/onboarding/users` (admin user), swap auth_code → access_token, then a WebSocket `auth/long_lived_access_token` (3650-day token) via `docker compose exec homeassistant python3`. Finish `core_config`/`analytics`/`integration`.
+2. Wait for HA API, `POST /api/onboarding/users` (admin user), swap auth_code → access_token, then a WebSocket `auth/long_lived_access_token` (3650-day token) via `docker compose exec homeassistant python3`. Finish `core_config`/`analytics`/`integration`, then apply the locale from `.env` (`TZ`, `HA_COUNTRY`, `HA_CURRENCY`, `HA_LANGUAGE`) via WebSocket `config/core/update` + admin `frontend/set_user_data` — onboarding alone leaves UTC / EUR / en.
 3. Persist token to `.env` as `HAMH_HOME_ASSISTANT_ACCESS_TOKEN`.
 4. Stage 2: if `matter-hub` in profiles, `docker compose up -d` again with full profiles.
 

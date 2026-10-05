@@ -384,10 +384,11 @@ docker compose up -d
 #   3. POST /auth/token            -> short-lived access_token.
 #   4. WebSocket auth/long_lived_access_token -> token for matter-hub.
 #   5. POST core_config / analytics / integration -> finish wizard headlessly.
-#   6. Persist token in .env, optionally start matter-hub.
+#   6. Locale: time zone / country / currency / language from .env.
+#   7. Persist token in .env, optionally start matter-hub.
 # ---------------------------------------------------------------------------
 HA_ADMIN_USERNAME="admin"
-HA_ADMIN_LANGUAGE="en"
+HA_ADMIN_LANGUAGE="${HA_LANGUAGE:-ru}"
 
 echo -n "$HA_ADMIN_PASSWORD" > ./homeassistant/raw.txt
 chmod 600 ./homeassistant/raw.txt
@@ -511,6 +512,44 @@ curl -fsS -o /dev/null -X POST "http://localhost:8123/api/onboarding/integration
   -d "$INTEGRATION_BODY" \
   || echo "WARNING: onboarding step 'integration' returned non-2xx (continuing)." >&2
 echo "HA onboarding completed."
+
+# ---------------------------------------------------------------------------
+# Locale. Onboarding leaves time zone UTC, currency EUR and language en no
+# matter what TZ says, so apply TZ / HA_COUNTRY / HA_CURRENCY / HA_LANGUAGE to
+# the core config and the admin user's UI language. Location stays at HA
+# defaults — it is per install (Settings -> System -> General).
+# ---------------------------------------------------------------------------
+echo "Applying locale: time_zone=${TZ:-Europe/Moscow} country=${HA_COUNTRY:-RU} currency=${HA_CURRENCY:-RUB} language=${HA_LANGUAGE:-ru} ..."
+docker compose exec -T homeassistant python3 - "$ACCESS_TOKEN" "${TZ:-Europe/Moscow}" \
+  "${HA_COUNTRY:-RU}" "${HA_CURRENCY:-RUB}" "${HA_LANGUAGE:-ru}" <<'PYEOF' \
+  || echo "WARNING: locale not applied — set it in Settings -> System -> General (continuing)." >&2
+import asyncio, sys, aiohttp
+
+async def main():
+    token, time_zone, country, currency, language = sys.argv[1:6]
+    async with aiohttp.ClientSession() as s:
+        async with s.ws_connect("http://localhost:8123/api/websocket") as ws:
+            await ws.receive_json()  # auth_required
+            await ws.send_json({"type": "auth", "access_token": token})
+            if (await ws.receive_json()).get("type") != "auth_ok":
+                raise SystemExit("auth failed")
+            calls = [
+                {"type": "config/core/update", "time_zone": time_zone, "country": country,
+                 "currency": currency, "language": language, "unit_system": "metric"},
+                # The admin user's UI language (frontend user data), same keys the profile page writes.
+                {"type": "frontend/set_user_data", "key": "language",
+                 "value": {"language": language, "number_format": "language", "time_format": "language",
+                           "date_format": "language", "first_weekday": "language", "time_zone": "local"}},
+            ]
+            for i, call in enumerate(calls, 1):
+                await ws.send_json({"id": i, **call})
+                resp = await ws.receive_json()
+                if not resp.get("success"):
+                    raise SystemExit(f"{call['type']} failed: {resp.get('error')}")
+    print("Locale applied.")
+
+asyncio.run(main())
+PYEOF
 
 # ---------------------------------------------------------------------------
 # Stage 2: bring up matter-hub now that the token is in .env (only if the
