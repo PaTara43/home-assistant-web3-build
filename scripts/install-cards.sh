@@ -61,7 +61,7 @@ install_release_zip() {
 # ---------------------------------------------------------------------------
 # Helper: download a single file from inside the source tarball of a tag.
 # install_from_source REPO TAG SUBPATH TARGET_DIR
-# Example: install_from_source thomasloven/lovelace-card-mod v4.2.1 card-mod.js cards/lovelace-card-mod
+# Example: install_from_source Clooos/Bubble-Card v3.4.1 dist/bubble-card.js cards/bubble-card
 # ---------------------------------------------------------------------------
 install_from_source() {
   local repo="$1" tag="$2" subpath="$3" target="$4"
@@ -80,7 +80,7 @@ install_from_source() {
   curl -fsSL "$url" | tar -xz -C "$tmp"
 
   # The tarball wraps everything in a single top-level directory like
-  # "lovelace-card-mod-4.2.1/". Find the actual file regardless of its name.
+  # "Bubble-Card-3.4.1/". Find the actual file regardless of its name.
   local found
   found="$(find "$tmp" -mindepth 2 -path "*/${subpath}" -type f | head -n 1)"
 
@@ -168,12 +168,6 @@ install_from_source \
   "$CARDS_DIR/custom-card-features"
 
 install_from_source \
-  "thomasloven/lovelace-card-mod" \
-  "$LOVELACE_CARD_MOD_VERSION" \
-  "card-mod.js" \
-  "$CARDS_DIR/lovelace-card-mod"
-
-install_from_source \
   "Clooos/Bubble-Card" \
   "$BUBBLE_CARD_VERSION" \
   "dist/bubble-card.js" \
@@ -189,6 +183,12 @@ echo ""
 echo "Done. Installed cards:"
 find "$CARDS_DIR" -mindepth 1 -maxdepth 1 -type d | sort
 
+if [ -d "$CARDS_DIR/lovelace-card-mod" ]; then
+  echo ""
+  echo "NOTE: $CARDS_DIR/lovelace-card-mod is left from an older install. card-mod is"
+  echo "      replaced by UIX and no longer registered; the folder can be deleted."
+fi
+
 # ---------------------------------------------------------------------------
 # Generate .storage/lovelace_resources so cards are registered with HA
 # without needing to add each one through the UI.
@@ -200,6 +200,16 @@ RESOURCES_FILE="$STORAGE_DIR/lovelace_resources"
 
 mkdir -p "$STORAGE_DIR"
 
+# HA runs as root: once anything has added a resource (UIX does on its first
+# start), lovelace_resources is root-owned and can't be written in place. It is
+# replaced with mv, which only needs write access to .storage (setup.sh creates
+# it as the operator).
+if [ ! -w "$STORAGE_DIR" ]; then
+  echo "ERROR: $STORAGE_DIR is not writable for $(id -un), can't update lovelace_resources." >&2
+  echo "       Fix the directory owner and re-run: sudo chown $(id -un): $STORAGE_DIR" >&2
+  exit 1
+fi
+
 # Backup if exists
 if [ -f "$RESOURCES_FILE" ]; then
   cp "$RESOURCES_FILE" "${RESOURCES_FILE}.bak"
@@ -207,16 +217,16 @@ if [ -f "$RESOURCES_FILE" ]; then
   echo "Existing $RESOURCES_FILE backed up to ${RESOURCES_FILE}.bak"
 fi
 
-# (resource_id, url) pairs — order matters: card-mod must load early so other
-# cards can reference its CSS extensions.
-cat > "$RESOURCES_FILE" <<'EOF'
+# (resource_id, url) pairs. card-mod is gone: UIX (custom integration, see
+# install-custom-integrations.sh) replaces it and re-adds its own resource
+# (/uix/uix.js) on every HA start, so rewriting this file doesn't drop it.
+cat > "${RESOURCES_FILE}.tmp" <<'EOF'
 {
   "version": 1,
   "minor_version": 1,
   "key": "lovelace_resources",
   "data": {
     "items": [
-      { "id": "card-mod",                   "type": "module", "url": "/local/community/lovelace-card-mod/card-mod.js" },
       { "id": "custom-card-features",       "type": "module", "url": "/local/community/custom-card-features/custom-card-features.min.js" },
       { "id": "mushroom",                   "type": "module", "url": "/local/community/mushroom/mushroom.js" },
       { "id": "bubble-card",                "type": "module", "url": "/local/community/bubble-card/bubble-card.js" },
@@ -233,6 +243,7 @@ cat > "$RESOURCES_FILE" <<'EOF'
   }
 }
 EOF
+mv -f "${RESOURCES_FILE}.tmp" "$RESOURCES_FILE"
 
 echo "Wrote $RESOURCES_FILE with $(grep -c '"id":' "$RESOURCES_FILE") resources."
 echo ""
