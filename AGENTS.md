@@ -17,7 +17,7 @@ bash scripts/setup.sh    # CLEAN install only; refuses if runtime dirs exist
 bash scripts/update.sh   # existing stack: pull pinned images, restart, clean old
 bash scripts/stop.sh      # docker compose down (all profiles)
 bash scripts/install-themes.sh              # then: docker compose restart homeassistant
-bash scripts/install-custom-integrations.sh # then: docker compose restart homeassistant
+bash scripts/install-custom-integrations.sh # restarts HA itself, adds UIX config entry (--no-restart: download only)
 bash scripts/install-cards.sh               # stop HA first, run, then start HA
 ```
 
@@ -35,6 +35,7 @@ Both loaded via `set -a; source ./.env; source ./scripts/packages.env; set +a`.
 - **Volumes are operator-owned.** `update.sh` does NOT regenerate configs in volumes (`mosquitto/config/mosquitto.conf`, `zigbee2mqtt/data/configuration.yaml`, HA `.storage/*`). They're rendered from `scripts/addons_conf/` via `envsubst` only on first `setup.sh`. Template edits don't propagate to running installs — say so explicitly to the user.
 - **`upsert_env_var`** (in `setup.sh` and `update.sh`) is the only sanctioned `.env` mutator — it preserves the rest of the file. Don't append blindly.
 - **Scripts must stay idempotent** and keep the `SCRIPT_DIR` / `cd "$REPO_ROOT"` preamble so they run from any CWD.
+- **HA writes root-owned files into bind-mounted dirs** (e.g. `__pycache__` in a loaded `custom_components/<x>`): a plain `rm -rf` as the operator fails. `install-custom-integrations.sh` stages the download, then removes the old copy via `docker run --rm` with the `homeassistant` container's image if needed. Same for `.storage/*` HA has written (e.g. `lovelace_resources` once UIX registered its resource): `install-cards.sh` writes a temp file and `mv`s it over, which needs only write access to `.storage/` (created by `setup.sh` as the operator).
 
 ## Profiles
 
@@ -80,5 +81,7 @@ Optional, for two coordinators (e.g. two floors). Enable by adding `z2m2` to `CO
 
 - **Mosquitto 2.1 alpine** ships no auth plugin, so `mosquitto.conf` uses the deprecated `password_file` on purpose. Don't "modernize" it to the plugin form.
 - **`install-cards.sh`** also writes `homeassistant/.storage/lovelace_resources` (backs up existing to `.bak`). HA only reads it at startup → restart HA after.
+- **UIX replaces card-mod** (unmaintained, broken on HA 2026.8+; `card_mod:` / `card-mod-*` keys still work). It's a custom integration: `install-custom-integrations.sh` installs it, restarts HA if running, waits for `RUNNING` and creates the config entry via the HA API with the `.env` long-lived token (idempotent). UIX re-adds its own Lovelace resource on every start, so `install-cards.sh` rewriting resources is fine. Its flow aborts while card-mod is still a resource / `extra_module_url`.
+- **`MATTER_VERSION` moves with `HA_VERSION`**: it must equal `matter-python-client` in HA's `matter/manifest.json`, otherwise HA rejects the server as too old/new.
 - **`update.sh`** reconciles zigbee stick state with a truth table (previous vs current `/dev/serial/by-id/`) and prompts on changes — **usb transport only**; for `tcp` it's skipped. It also guards `matter-hub` if the HA token is missing.
 - HA YAML uses modern syntax (`triggers:`/`actions:`/`action:`, modern `template:`). Current HA series: `HA_VERSION` in `scripts/packages.env`.

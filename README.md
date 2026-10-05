@@ -84,9 +84,13 @@ Idempotent installers that pull pinned releases from GitHub into `homeassistant/
 
 ```sh
 bash scripts/install-themes.sh                # then: docker compose restart homeassistant
-bash scripts/install-custom-integrations.sh   # then: docker compose restart homeassistant
+bash scripts/install-custom-integrations.sh   # restarts HA itself and adds the UIX config entry
 docker compose stop homeassistant && bash scripts/install-cards.sh && docker compose start homeassistant
 ```
+
+`install-custom-integrations.sh` restarts the `homeassistant` container (if it's running) so the new code loads, waits for HA, and adds the [UI eXtension](https://github.com/Lint-Free-Technology/uix) config entry through the HA API using the long-lived token from `.env`. Re-running is safe: an existing entry is left alone, each integration is downloaded before the installed copy is replaced, and root-owned files HA left there (`__pycache__` of a loaded integration) are removed through a throwaway container from the HA image — no `sudo` needed. Pass `--no-restart` to only download — then restart HA yourself and re-run (or add *UI eXtension* in Settings → Devices & services).
+
+UIX replaces **card-mod** (unmaintained, broken on HA 2026.8+): `card_mod:` in cards and `card-mod-*` keys in themes keep working. It refuses to install while card-mod is still a Dashboard resource or a `frontend: extra_module_url` — `install-cards.sh` no longer registers card-mod, so on an older install run it before adding UIX.
 
 `install-cards.sh` also writes `homeassistant/.storage/lovelace_resources` so cards register without manual UI steps. After updating cards, hard-reload the page (Ctrl+Shift+R) — no cache-busting query strings are added by design.
 

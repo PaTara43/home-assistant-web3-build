@@ -16,7 +16,7 @@ bash scripts/update.sh   # pull pinned images, restart, clean old layers
 bash scripts/stop.sh     # docker compose down (all profiles)
 
 bash scripts/install-themes.sh                # then: docker compose restart homeassistant
-bash scripts/install-custom-integrations.sh   # then: docker compose restart homeassistant
+bash scripts/install-custom-integrations.sh   # restarts HA itself, adds UIX config entry (--no-restart: download only)
 bash scripts/install-cards.sh                 # stop HA first, run, then start HA
 ```
 
@@ -47,7 +47,11 @@ There are no tests, no linter config, no build step. Shell scripts use `set -euo
 
 **Mosquitto 2.1 quirk.** The alpine image doesn't ship the auth plugin, so the config uses the deprecated `password_file` option on purpose. Don't "modernize" it.
 
-**Custom-content scripts (`install-themes.sh`, `install-custom-integrations.sh`, `install-cards.sh`).** Idempotent: they download pinned releases from GitHub into `homeassistant/themes/`, `homeassistant/custom_components/`, `homeassistant/www/community/` respectively. `install-cards.sh` additionally writes `homeassistant/.storage/lovelace_resources` so cards register without manual UI steps. To bump a version, edit `scripts/packages.env` and re-run the relevant script.
+**Custom-content scripts (`install-themes.sh`, `install-custom-integrations.sh`, `install-cards.sh`).** Idempotent: they download pinned releases from GitHub into `homeassistant/themes/`, `homeassistant/custom_components/`, `homeassistant/www/community/` respectively. `install-cards.sh` additionally writes `homeassistant/.storage/lovelace_resources` so cards register without manual UI steps. To bump a version, edit `scripts/packages.env` and re-run the relevant script. HA runs as root, so a loaded integration gets a root-owned `__pycache__` on the host: `install-custom-integrations.sh` downloads to a staging dir, then removes the old copy (falling back to `docker run --rm` with the `homeassistant` container's image when `rm` hits root-owned files) and moves the new one in. Likewise `lovelace_resources` is root-owned once UIX has registered its resource, so `install-cards.sh` writes a temp file and `mv`s it over (needs only `.storage/` to be writable — `setup.sh` creates it as the operator).
+
+**UIX instead of card-mod.** card-mod is unmaintained and broken on HA 2026.8+; UI eXtension (`Lint-Free-Technology/uix`) is its drop-in replacement (`card_mod:` / `card-mod-*` theme keys still work). UIX is a custom *integration* with a config entry, not a card: `install-custom-integrations.sh` installs it, restarts HA if running, waits for `state: RUNNING` and creates the entry via `POST /api/config/config_entries/flow` with the `.env` long-lived token (skipped if one exists). UIX registers its own frontend module and re-adds its Lovelace resource on every start, so `install-cards.sh` rewriting `lovelace_resources` doesn't drop it. Its config flow aborts if card-mod is still a resource or `extra_module_url`.
+
+**`MATTER_VERSION` moves with `HA_VERSION`.** HA's matter integration pins `matter-python-client` and rejects a server that's too old/new — keep the matterjs-server tag equal to that client version.
 
 **`upsert_env_var`** (defined in both `setup.sh` and `update.sh`) is the only sanctioned way to mutate `.env` from a script — it preserves the rest of the file. Use it; don't append blindly.
 
