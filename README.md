@@ -27,7 +27,7 @@ cp template.env .env
 Edit `.env`. Defaults are sane for most setups:
 
 - `TZ` — IANA time zone (e.g. `Europe/Moscow`); also becomes HA's time zone.
-- `HA_LANGUAGE`, `HA_COUNTRY`, `HA_CURRENCY` — HA locale applied right after onboarding (defaults `ru`, `RU`, `RUB`; Cyprus, e.g.: `TZ=Asia/Nicosia`, `en`, `CY`, `EUR`). Default areas are named in `HA_LANGUAGE`. `setup.sh` prints the locale and checks it before touching anything.
+- `HA_LANGUAGE`, `HA_COUNTRY`, `HA_CURRENCY` — optional HA locale applied right after onboarding; empty keeps HA's defaults (en, EUR, no country). Russia: `ru`, `RU`, `RUB`; Cyprus: `en`, `CY`, `EUR` with `TZ=Asia/Nicosia`. Default areas are named in `HA_LANGUAGE`. `setup.sh` prints the locale and checks it before touching anything.
 - `ZIGBEE_CHANNEL` — 11–26. Channels 11/15/20/25 are typically least congested.
 - `ZIGBEE_ADAPTER` — adapter type (`ember` for Sonoff ZBDongle-E, `zstack` for ZBDongle-P, see `.env` comments for the rest).
 - `Z2M_TRANSPORT` — `usb` (default, auto-detected) or `tcp` for PoE coordinators (e.g. SMLight SLZB-06). For `tcp`, also set `Z2M_TCP_HOST` and optionally `Z2M_TCP_PORT` (default 6638) and `Z2M_BAUDRATE` (SLZB-06 → 115200). `ZIGBEE_ADAPTER` must match the chip: SLZB-06 → `zstack`.
@@ -53,7 +53,7 @@ What it does:
 3. Generates two secrets: a Mosquitto password (service-to-service) and a **single master password** reused as the HA admin password, the matter-hub HTTP basic-auth password, and the zigbee2mqtt frontend `auth_token`.
 4. Renders Mosquitto and Zigbee2MQTT configs from templates under `scripts/addons_conf/`, pre-seeds HA's MQTT integration via `homeassistant/.storage/core.config_entries`.
 5. Brings the stack up (Stage 1, without matter-hub), waits for HA's API.
-6. Runs the **full HA onboarding headlessly** through the API: creates the `admin` user, mints a 10-year long-lived token via the WebSocket API, and POSTs `core_config` / `analytics` / `integration` to finish the wizard. The token is persisted in `.env` as `HAMH_HOME_ASSISTANT_ACCESS_TOKEN`. Then applies the locale from `.env` — `TZ`, `HA_COUNTRY`, `HA_CURRENCY`, `HA_LANGUAGE` (defaults: Europe/Moscow, RU, RUB, ru; metric) — to the core config and the admin's UI language, since onboarding itself leaves UTC / EUR / en. Location (latitude/longitude) stays at HA defaults — set it in Settings → System → General.
+6. Runs the **full HA onboarding headlessly** through the API: creates the `admin` user, mints a 10-year long-lived token via the WebSocket API, and POSTs `core_config` / `analytics` / `integration` to finish the wizard. The token is persisted in `.env` as `HAMH_HOME_ASSISTANT_ACCESS_TOKEN`. Then applies whatever locale `.env` sets — `TZ` as HA's time zone, plus the optional `HA_COUNTRY`, `HA_CURRENCY`, `HA_LANGUAGE` (also the admin's UI language) — since onboarding itself leaves UTC / EUR / en; empty keys keep HA's defaults. Location (latitude/longitude) stays at HA defaults — set it in Settings → System → General.
 7. If `matter-hub` is in `COMPOSE_PROFILES`, runs Stage 2 to start matter-hub now that the token is on disk.
 8. Prints all generated credentials in a final block.
 

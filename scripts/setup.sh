@@ -77,16 +77,19 @@ source ./scripts/packages.env
 set +a
 
 # ---------------------------------------------------------------------------
-# Locale — shown and checked up front: it is applied only after onboarding,
-# so a typo would otherwise surface when the stack is already up.
+# Locale — optional (.env: TZ, HA_LANGUAGE, HA_COUNTRY, HA_CURRENCY); empty
+# keeps HA's own defaults. Shown and checked up front: it is applied only
+# after onboarding, so a typo would otherwise surface when the stack is up.
 # ---------------------------------------------------------------------------
-: "${TZ:=Europe/Moscow}" "${HA_LANGUAGE:=ru}" "${HA_COUNTRY:=RU}" "${HA_CURRENCY:=RUB}"
-echo "HA locale: TZ=${TZ} HA_LANGUAGE=${HA_LANGUAGE} HA_COUNTRY=${HA_COUNTRY} HA_CURRENCY=${HA_CURRENCY} (edit .env to change)"
-if [ ! -f "/usr/share/zoneinfo/${TZ}" ]; then
+TZ="${TZ:-}" HA_LANGUAGE="${HA_LANGUAGE:-}" HA_COUNTRY="${HA_COUNTRY:-}" HA_CURRENCY="${HA_CURRENCY:-}"
+echo "HA locale: TZ=${TZ:-<HA default>} HA_LANGUAGE=${HA_LANGUAGE:-<HA default>} HA_COUNTRY=${HA_COUNTRY:-<HA default>} HA_CURRENCY=${HA_CURRENCY:-<HA default>} (edit .env to change)"
+if [ -n "$TZ" ] && [ ! -f "/usr/share/zoneinfo/${TZ}" ]; then
   echo "ERROR: TZ='${TZ}' is not a tz database name (no /usr/share/zoneinfo/${TZ})." >&2
   exit 1
 fi
-if ! [[ "$HA_COUNTRY" =~ ^[A-Z]{2}$ && "$HA_CURRENCY" =~ ^[A-Z]{3}$ && "$HA_LANGUAGE" =~ ^[a-z]{2,3}(-[A-Za-z]{2,4})?$ ]]; then
+if { [ -n "$HA_COUNTRY" ] && ! [[ "$HA_COUNTRY" =~ ^[A-Z]{2}$ ]]; } \
+   || { [ -n "$HA_CURRENCY" ] && ! [[ "$HA_CURRENCY" =~ ^[A-Z]{3}$ ]]; } \
+   || { [ -n "$HA_LANGUAGE" ] && ! [[ "$HA_LANGUAGE" =~ ^[a-z]{2,3}(-[A-Za-z]{2,4})?$ ]]; }; then
   echo "ERROR: HA_COUNTRY (2 letters, e.g. RU), HA_CURRENCY (3 letters, e.g. RUB) or HA_LANGUAGE (e.g. ru, en, pt-BR) is malformed." >&2
   exit 1
 fi
@@ -403,7 +406,7 @@ docker compose up -d
 #   7. Persist token in .env, optionally start matter-hub.
 # ---------------------------------------------------------------------------
 HA_ADMIN_USERNAME="admin"
-HA_ADMIN_LANGUAGE="${HA_LANGUAGE}"
+HA_ADMIN_LANGUAGE="${HA_LANGUAGE:-en}"
 
 echo -n "$HA_ADMIN_PASSWORD" > ./homeassistant/raw.txt
 chmod 600 ./homeassistant/raw.txt
@@ -530,14 +533,18 @@ echo "HA onboarding completed."
 
 # ---------------------------------------------------------------------------
 # Locale. Onboarding leaves time zone UTC, currency EUR and language en no
-# matter what TZ says, so apply TZ / HA_COUNTRY / HA_CURRENCY / HA_LANGUAGE to
-# the core config and the admin user's UI language. Location stays at HA
-# defaults — it is per install (Settings -> System -> General).
+# matter what TZ says, so apply whatever of TZ / HA_COUNTRY / HA_CURRENCY /
+# HA_LANGUAGE is set to the core config (and the language to the admin's UI).
+# Empty values keep HA's defaults. Location is per install (Settings -> System
+# -> General).
 # ---------------------------------------------------------------------------
-echo "Applying locale: time_zone=${TZ} country=${HA_COUNTRY} currency=${HA_CURRENCY} language=${HA_LANGUAGE} ..."
-docker compose exec -T homeassistant python3 - "$ACCESS_TOKEN" "${TZ}" \
-  "${HA_COUNTRY}" "${HA_CURRENCY}" "${HA_LANGUAGE}" <<'PYEOF' \
-  || echo "WARNING: locale not applied — set it in Settings -> System -> General (continuing)." >&2
+if [ -z "${TZ}${HA_COUNTRY}${HA_CURRENCY}${HA_LANGUAGE}" ]; then
+  echo "HA locale not set in .env — HA keeps its defaults."
+else
+  echo "Applying locale ..."
+  docker compose exec -T homeassistant python3 - "$ACCESS_TOKEN" "${TZ}" \
+    "${HA_COUNTRY}" "${HA_CURRENCY}" "${HA_LANGUAGE}" <<'PYEOF' \
+    || echo "WARNING: locale not applied — set it in Settings -> System -> General (continuing)." >&2
 import asyncio, sys, aiohttp
 
 async def main():
@@ -548,23 +555,25 @@ async def main():
             await ws.send_json({"type": "auth", "access_token": token})
             if (await ws.receive_json()).get("type") != "auth_ok":
                 raise SystemExit("auth failed")
-            calls = [
-                {"type": "config/core/update", "time_zone": time_zone, "country": country,
-                 "currency": currency, "language": language, "unit_system": "metric"},
+            core = {k: v for k, v in (("time_zone", time_zone), ("country", country),
+                                      ("currency", currency), ("language", language)) if v}
+            calls = [{"type": "config/core/update", **core}]
+            if language:
                 # The admin user's UI language (frontend user data), same keys the profile page writes.
-                {"type": "frontend/set_user_data", "key": "language",
-                 "value": {"language": language, "number_format": "language", "time_format": "language",
-                           "date_format": "language", "first_weekday": "language", "time_zone": "local"}},
-            ]
+                calls.append({"type": "frontend/set_user_data", "key": "language",
+                              "value": {"language": language, "number_format": "language",
+                                        "time_format": "language", "date_format": "language",
+                                        "first_weekday": "language", "time_zone": "local"}})
             for i, call in enumerate(calls, 1):
                 await ws.send_json({"id": i, **call})
                 resp = await ws.receive_json()
                 if not resp.get("success"):
                     raise SystemExit(f"{call['type']} failed: {resp.get('error')}")
-    print("Locale applied.")
+    print("Locale applied: " + ", ".join(f"{k}={v}" for k, v in core.items()))
 
 asyncio.run(main())
 PYEOF
+fi
 
 # ---------------------------------------------------------------------------
 # Stage 2: bring up matter-hub now that the token is in .env (only if the
