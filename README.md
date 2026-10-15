@@ -81,7 +81,7 @@ Brings down all containers regardless of which profiles are currently active (in
 
 ### `install-themes.sh` / `install-custom-integrations.sh` / `install-cards.sh`
 
-Idempotent installers that pull pinned releases from GitHub into `homeassistant/themes/`, `homeassistant/custom_components/`, `homeassistant/www/community/` respectively. To bump a version, edit the relevant `*_VERSION` in `scripts/packages.env` and re-run.
+Idempotent installers that pull pinned releases from GitHub into `homeassistant/themes/`, `homeassistant/custom_components/`, `homeassistant/www/community/` respectively. To bump a version, edit the relevant `*_VERSION` in `scripts/packages.env` and re-run. Theme backgrounds are served by HA itself, so they work without internet: iOS themes load theirs from `/local/ios-themes/` (upstream's regular variants pull them from cdn.jsdelivr.net), visionOS themes from `/local/visionos/` (upstream pulls them from raw.githubusercontent.com; the script downloads them at install time). Themes reload without a restart: *Developer tools → Actions → `frontend.reload_themes`*.
 
 ```sh
 bash scripts/install-themes.sh                # then: docker compose restart homeassistant
